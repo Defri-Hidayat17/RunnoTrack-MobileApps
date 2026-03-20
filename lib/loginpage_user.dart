@@ -3,11 +3,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
-import 'dart:math'; // Import for max function
-import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
+import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'loginpage.dart';
 import 'homepage.dart';
+import 'admin_main_scaffold.dart';
 
 class LoginPageUser extends StatefulWidget {
   final String accountType;
@@ -22,27 +23,27 @@ class _LoginPageUserState extends State<LoginPageUser> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  // FocusNode untuk melacak fokus pada TextField
   final FocusNode _usernameFocusNode = FocusNode();
   final FocusNode _passwordFocusNode = FocusNode();
 
-  // Variabel untuk menyimpan posisi bottom dari widget yang sedang fokus
   double _currentFocusedWidgetBottom = 0.0;
 
   bool _isLoginLoading = false;
   bool _isInitialDataLoading = true;
   bool _obscureText = true;
-  bool _rememberMe = false; // State untuk checkbox "Buat saya tetap masuk"
+  bool _rememberMe = false;
 
   String? _initialPhotoUrl;
 
   static const String _computerIp = '192.168.1.10';
   static const String _apiBasePath = 'runnotrack_api';
-  // >>> START PERUBAHAN: Tambahkan konstanta kunci Shared Preferences
   static const String _prefsKeyIsLoggedIn = 'is_logged_in';
-  // <<< END PERUBAHAN
+  static const String _prefsKeyName = 'name';
+  static const String _prefsKeyRole =
+      'user_role'; // 🔥 PENTING: Kunci ini HARUS SAMA dengan yang di SplashScreen
+  static const String _prefsKeyAccountType =
+      'user_account_type'; // Kunci ini masih disimpan, tapi SplashScreen tidak menggunakannya untuk routing
 
-  // --- Helper untuk InputDecoration agar kode lebih ringkas dan tidak berulang ---
   InputDecoration _buildInputDecoration({
     required String labelText,
     required String hintText,
@@ -74,9 +75,8 @@ class _LoginPageUserState extends State<LoginPageUser> {
   @override
   void initState() {
     super.initState();
-    _loadRememberMeState(); // Muat status "Buat saya tetap masuk" yang tersimpan
+    _loadRememberMeState();
     _fetchInitialAccountPhoto();
-    // Tambahkan listener ke FocusNode untuk mendeteksi perubahan fokus
     _usernameFocusNode.addListener(_onFocusChange);
     _passwordFocusNode.addListener(_onFocusChange);
   }
@@ -85,7 +85,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    // Hapus listener dan dispose FocusNode untuk menghindari memory leak
     _usernameFocusNode.removeListener(_onFocusChange);
     _passwordFocusNode.removeListener(_onFocusChange);
     _usernameFocusNode.dispose();
@@ -93,9 +92,7 @@ class _LoginPageUserState extends State<LoginPageUser> {
     super.dispose();
   }
 
-  // Fungsi untuk mendeteksi perubahan fokus dan mendapatkan posisi widget yang fokus
   void _onFocusChange() {
-    // Memastikan context masih valid sebelum mencari RenderBox
     if (!mounted) return;
 
     if (_usernameFocusNode.hasFocus || _passwordFocusNode.hasFocus) {
@@ -106,7 +103,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
               as RenderBox?;
 
       if (renderBox != null) {
-        // Hitung posisi bottom widget secara global di layar
         final offset = renderBox.localToGlobal(Offset.zero);
         setState(() {
           _currentFocusedWidgetBottom = offset.dy + renderBox.size.height;
@@ -114,45 +110,28 @@ class _LoginPageUserState extends State<LoginPageUser> {
       }
     } else {
       setState(() {
-        _currentFocusedWidgetBottom = 0.0; // Reset jika tidak ada yang fokus
+        _currentFocusedWidgetBottom = 0.0;
       });
     }
   }
 
-  // --- Fungsionalitas "Buat saya tetap masuk" ---
   Future<void> _loadRememberMeState() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _rememberMe = prefs.getBool('rememberMe') ?? false;
-      // Jika kamu ingin menyimpan dan memuat username/password secara otomatis,
-      // bisa ditambahkan di sini, misalnya:
-      // if (_rememberMe) {
-      //   _usernameController.text = prefs.getString('savedUsername') ?? '';
-      //   _passwordController.text = prefs.getString('savedPassword') ?? '';
-      // }
     });
   }
 
   Future<void> _saveRememberMeState(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('rememberMe', value);
-    // Jika kamu menyimpan username/password, tambahkan logika di sini:
-    // if (value) {
-    //   await prefs.setString('savedUsername', _usernameController.text);
-    //   await prefs.setString('savedPassword', _passwordController.text);
-    // } else {
-    //   await prefs.remove('savedUsername');
-    //   await prefs.remove('savedPassword');
-    // }
   }
 
-  // Fungsi untuk menyimpan status login ke SharedPreferences
-  Future<void> _saveLoginStatus(bool isLoggedIn) async {
-    final prefs = await SharedPreferences.getInstance();
-    // >>> START PERUBAHAN: Gunakan kunci yang konsisten
-    await prefs.setBool(_prefsKeyIsLoggedIn, isLoggedIn);
-    // <<< END PERUBAHAN
-  }
+  // Fungsi ini tidak lagi diperlukan karena status login diatur langsung di _login
+  // Future<void> _saveLoginStatus(bool isLoggedIn) async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   await prefs.setBool(_prefsKeyIsLoggedIn, isLoggedIn);
+  // }
 
   Future<void> _fetchInitialAccountPhoto() async {
     setState(() {
@@ -207,96 +186,124 @@ class _LoginPageUserState extends State<LoginPageUser> {
         },
       );
 
+      final prefs = await SharedPreferences.getInstance();
+
+      // 🔥 PENTING: Selalu hapus data login sebelumnya untuk memastikan status bersih
+      await prefs.remove(_prefsKeyIsLoggedIn);
+      await prefs.remove(_prefsKeyName);
+      await prefs.remove(_prefsKeyRole);
+      await prefs.remove(_prefsKeyAccountType);
+      await prefs.remove('photo_url');
+      await prefs.remove('user_id');
+
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['status'] == 'success') {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(responseData['message'])));
+          // Hanya tampilkan snackbar sukses jika login benar-benar berhasil
+          // ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(responseData['message'])));
 
-          final prefs =
-              await SharedPreferences.getInstance(); // Dapatkan instance SharedPreferences
+          // Pastikan user_data tidak null
+          if (responseData['user_data'] != null) {
+            final String userRole = responseData['user_data']['role'] ?? '';
 
-          // Simpan status login, username, dan accountType
-          // >>> START PERUBAHAN: Gunakan kunci yang konsisten
-          await prefs.setBool(_prefsKeyIsLoggedIn, true);
-          // <<< END PERUBAHAN
-          await prefs.setString('username', username); // Simpan username
-          await prefs.setString(
-            'accountType',
-            accountType,
-          ); // Simpan accountType
+            // 🔥 VALIDASI ROLE: Login dianggap sukses hanya jika role tidak kosong
+            if (userRole.isNotEmpty) {
+              await prefs.setBool(_prefsKeyIsLoggedIn, true);
+              await prefs.setString('username', username);
+              await prefs.setString(_prefsKeyAccountType, accountType);
+              await prefs.setString(
+                _prefsKeyName,
+                responseData['user_data']['name'] ?? '',
+              );
+              await prefs.setString(
+                _prefsKeyRole,
+                userRole,
+              ); // Simpan role yang sudah divalidasi
 
-          // --- BARIS PENTING: SIMPAN photo_url KE SHARED PREFERENCES ---
-          // Asumsi 'user_data' adalah Map dan memiliki kunci 'photo_url'
-          if (responseData['user_data'] != null &&
-              responseData['user_data']['photo_url'] != null) {
-            await prefs.setString(
-              'photo_url',
-              responseData['user_data']['photo_url'],
+              if (responseData['user_data']['photo_url'] != null) {
+                await prefs.setString(
+                  'photo_url',
+                  responseData['user_data']['photo_url'],
+                );
+                print(
+                  'DEBUG LOGIN: Photo URL saved to SharedPreferences: ${responseData['user_data']['photo_url']}',
+                );
+              }
+              if (responseData['user_data']['user_id'] != null) {
+                await prefs.setString(
+                  'user_id',
+                  responseData['user_data']['user_id'].toString(),
+                );
+                print(
+                  'DEBUG LOGIN: User ID saved to SharedPreferences: ${responseData['user_data']['user_id']}',
+                );
+              }
+
+              print('User Data: ${responseData['user_data']}');
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(responseData['message'])));
+
+              // 🔥 NAVIGASI YANG DIPERBARUI: Lebih sederhana dan sesuai dengan DB Anda
+              if (accountType == 'Admin') {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AdminMainScaffold(),
+                  ),
+                );
+              } else {
+                // Semua accountType lain (seperti 'Kaishi Picking', 'CrossLine') akan masuk ke HomePage
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const HomePage()),
+                );
+              }
+            } else {
+              // Jika role kosong meskipun status sukses, anggap login gagal
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Login gagal: Peran pengguna tidak ditemukan. Silakan coba lagi atau hubungi dukungan.',
+                  ),
+                ),
+              );
+              print(
+                'WARNING: Login successful but user role is empty or null from API. Not navigating.',
+              );
+              // Tidak perlu set isLoggedIn ke false karena sudah dihapus di awal, dan tidak di set true
+            }
+          } else {
+            // Jika user_data null meskipun status sukses, ada masalah API
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Login gagal: Data pengguna tidak lengkap. Silakan coba lagi atau hubungi dukungan.',
+                ),
+              ),
             );
             print(
-              'DEBUG LOGIN: Photo URL saved to SharedPreferences: ${responseData['user_data']['photo_url']}',
-            );
-          } else {
-            // Jika tidak ada photo_url, pastikan dihapus atau diatur ke null
-            await prefs.remove('photo_url');
-            print(
-              'DEBUG LOGIN: No photo URL found in user_data or user_data is null. Removed photo_url from SharedPreferences.',
+              'ERROR: Login successful but user_data is null from API. Not navigating.',
             );
           }
-          // --- AKHIR BARIS PENTING ---
-
-          // Simpan status "Buat saya tetap masuk"
-          if (_rememberMe) {
-            // Jika Anda ingin menyimpan username/password secara otomatis, tambahkan di sini:
-            // await prefs.setString('savedUsername', username);
-            // await prefs.setString('savedPassword', password); // Hati-hati menyimpan password tanpa enkripsi
-          } else {
-            // Jika tidak "remember me", pastikan tidak ada username/password yang tersimpan
-            // await prefs.remove('savedUsername');
-            // await prefs.remove('savedPassword');
-          }
-
-          print('User Data: ${responseData['user_data']}');
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
-          );
         } else {
+          // Login gagal dari API (misal: username/password salah)
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(responseData['message'])));
-          final prefs = await SharedPreferences.getInstance();
-          // >>> START PERUBAHAN: Gunakan kunci yang konsisten
-          await prefs.setBool(_prefsKeyIsLoggedIn, false);
-          // <<< END PERUBAHAN
-          // Hapus photo_url jika login gagal
-          await prefs.remove('photo_url');
         }
       } else {
+        // Server error (misal: 404, 500)
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Server error: ${response.statusCode}')),
         );
-        final prefs = await SharedPreferences.getInstance();
-        // >>> START PERUBAHAN: Gunakan kunci yang konsisten
-        await prefs.setBool(_prefsKeyIsLoggedIn, false);
-        // <<< END PERUBAHAN
-        // Hapus photo_url jika ada error server
-        await prefs.remove('photo_url');
       }
     } catch (e) {
+      // Error jaringan atau parsing
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
       print('Login error: $e');
-      final prefs = await SharedPreferences.getInstance();
-      // >>> START PERUBAHAN: Gunakan kunci yang konsisten
-      await prefs.setBool(_prefsKeyIsLoggedIn, false);
-      // <<< END PERUBAHAN
-      // Hapus photo_url jika ada error
-      await prefs.remove('photo_url');
     } finally {
       setState(() {
         _isLoginLoading = false;
@@ -308,19 +315,14 @@ class _LoginPageUserState extends State<LoginPageUser> {
   Widget build(BuildContext context) {
     final Size size = MediaQuery.of(context).size;
     final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    const double footerTextHeight =
-        60.0; // Tinggi perkiraan untuk teks versi aplikasi
-    const double paddingAboveKeyboard =
-        20.0; // Padding antara elemen UI dan keyboard
+    const double footerTextHeight = 60.0;
+    const double paddingAboveKeyboard = 20.0;
 
-    double shiftAmount =
-        0.0; // Ini adalah nilai positif untuk seberapa banyak harus bergeser ke atas
+    double shiftAmount = 0.0;
 
-    // Hanya hitung pergeseran jika keyboard muncul
     if (keyboardHeight > 0) {
       double requiredShiftForFocusedWidget = 0.0;
       if (_currentFocusedWidgetBottom > 0) {
-        // Area aman di atas keyboard untuk widget yang fokus
         double safeAreaBottom =
             size.height - keyboardHeight - paddingAboveKeyboard;
         if (_currentFocusedWidgetBottom > safeAreaBottom) {
@@ -329,25 +331,19 @@ class _LoginPageUserState extends State<LoginPageUser> {
         }
       }
 
-      // Pergeseran yang dibutuhkan untuk teks footer agar tidak tertutup keyboard
-      // Footer berada di `bottom: 0` dari `Stack` yang digeser.
-      // Jadi, jika keyboard muncul, footer perlu diangkat setidaknya setinggi keyboard + padding.
       double requiredShiftForFooter = keyboardHeight + paddingAboveKeyboard;
-
-      // Ambil pergeseran terbesar (yang paling tinggi) agar semua elemen terlihat
       shiftAmount = max(requiredShiftForFocusedWidget, requiredShiftForFooter);
     }
 
     return GestureDetector(
       onTap: () {
-        FocusScope.of(context).unfocus(); // Menyembunyikan keyboard
+        FocusScope.of(context).unfocus();
       },
       child: Scaffold(
-        resizeToAvoidBottomInset: false, // Kita atur pergeseran secara manual
+        resizeToAvoidBottomInset: false,
         backgroundColor: const Color(0xFF03112B),
         body: Stack(
           children: [
-            /// BACKGROUND BIRU GRADIENT (Tidak ikut bergeser, tetap di atas)
             Container(
               width: size.width,
               height: size.height * 0.5,
@@ -359,8 +355,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
                 ),
               ),
             ),
-
-            /// BACK BUTTON (Tidak ikut bergeser, tetap di posisi atas)
             Positioned(
               top: MediaQuery.of(context).padding.top + 10,
               left: 12,
@@ -374,19 +368,15 @@ class _LoginPageUserState extends State<LoginPageUser> {
                 },
               ),
             ),
-
-            /// GRUP KONTEN UTAMA YANG BERGERAK (Logo, SVG Gelombang, Form, Teks Versi Aplikasi)
-            // Transform.translate akan menggeser seluruh Stack ini sebagai satu kesatuan
             Transform.translate(
-              offset: Offset(0, -shiftAmount), // Terapkan pergeseran ke atas
+              offset: Offset(0, -shiftAmount),
               child: Stack(
                 children: [
-                  /// WHITE WAVE SVG (SEBAGAI BACKGROUND UTAMA UNTUK FORM)
                   Positioned(
-                    top: size.height * 0.45, // Posisi relatif terhadap layar
+                    top: size.height * 0.45,
                     left: 0,
                     right: 0,
-                    bottom: 0, // Meluas hingga ke bawah layar
+                    bottom: 0,
                     child: RepaintBoundary(
                       child: SvgPicture.asset(
                         "assets/images/loginpage.svg",
@@ -395,10 +385,8 @@ class _LoginPageUserState extends State<LoginPageUser> {
                       ),
                     ),
                   ),
-
-                  /// LOGO
                   Positioned(
-                    top: size.height * 0.20, // Posisi relatif terhadap layar
+                    top: size.height * 0.20,
                     left: 0,
                     right: 0,
                     child: Column(
@@ -412,18 +400,14 @@ class _LoginPageUserState extends State<LoginPageUser> {
                       ],
                     ),
                   ),
-
-                  /// CONTENT LOGIN FORM (Elemen interaktif di atas SVG)
                   Positioned(
-                    top: size.height * 0.52, // Posisi relatif terhadap layar
+                    top: size.height * 0.52,
                     left: 24,
                     right: 24,
-                    // Tidak ada 'bottom' agar Column mengambil tinggi alaminya
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        /// TITLE
                         const Center(
                           child: Text(
                             "Login",
@@ -434,32 +418,25 @@ class _LoginPageUserState extends State<LoginPageUser> {
                             ),
                           ),
                         ),
-
                         const SizedBox(height: 20),
-
-                        /// TEXTFIELD USERNAME
                         TextField(
                           controller: _usernameController,
-                          focusNode: _usernameFocusNode, // Tambahkan FocusNode
+                          focusNode: _usernameFocusNode,
                           enableSuggestions: false,
                           autocorrect: false,
                           decoration: _buildInputDecoration(
-                            // Menggunakan helper
                             labelText: 'Masukkan ID',
                             hintText: 'Masukkan ID Anda',
                           ),
                         ),
                         const SizedBox(height: 15),
-
-                        /// TEXTFIELD PASSWORD
                         TextField(
                           controller: _passwordController,
-                          focusNode: _passwordFocusNode, // Tambahkan FocusNode
+                          focusNode: _passwordFocusNode,
                           obscureText: _obscureText,
                           enableSuggestions: false,
                           autocorrect: false,
                           decoration: _buildInputDecoration(
-                            // Menggunakan helper
                             labelText: 'Kata Sandi',
                             hintText: 'Masukkan Kata Sandi Anda',
                             suffixIcon: IconButton(
@@ -478,8 +455,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
                           ),
                         ),
                         const SizedBox(height: 5),
-
-                        /// CHECKBOX "Buat saya tetap masuk"
                         Align(
                           alignment: Alignment.centerRight,
                           child: Row(
@@ -495,9 +470,7 @@ class _LoginPageUserState extends State<LoginPageUser> {
                                   setState(() {
                                     _rememberMe = newValue!;
                                   });
-                                  _saveRememberMeState(
-                                    newValue!,
-                                  ); // Simpan status ke SharedPreferences
+                                  _saveRememberMeState(newValue!);
                                 },
                                 activeColor: const Color(0xFF03112B),
                               ),
@@ -505,8 +478,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
                           ),
                         ),
                         const SizedBox(height: 15),
-
-                        /// BUTTON MASUK
                         SizedBox(
                           width: double.infinity,
                           height: 52,
@@ -530,8 +501,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
                           ),
                         ),
                         const SizedBox(height: 15),
-
-                        /// AKUN YANG DIPILIH DAN FOTO
                         Center(
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -577,15 +546,12 @@ class _LoginPageUserState extends State<LoginPageUser> {
                       ],
                     ),
                   ),
-
-                  /// FOOTER (Teks Versi Aplikasi) - Sekarang ikut bergerak
                   Positioned(
-                    bottom: 0, // Posisikan di paling bawah dari Stack ini
+                    bottom: 0,
                     left: 0,
                     right: 0,
                     child: Container(
-                      height:
-                          footerTextHeight, // Tinggi yang sama dengan sebelumnya
+                      height: footerTextHeight,
                       alignment: Alignment.center,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -605,8 +571,6 @@ class _LoginPageUserState extends State<LoginPageUser> {
                 ],
               ),
             ),
-
-            /// LOADING OVERLAY (Tidak ikut bergeser, tetap di atas semua)
             if (_isInitialDataLoading || _isLoginLoading)
               Positioned.fill(
                 child: Container(

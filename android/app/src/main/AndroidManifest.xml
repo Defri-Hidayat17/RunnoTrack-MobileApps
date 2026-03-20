@@ -3,10 +3,22 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Izin untuk menyimpan gambar ke galeri (diperlukan untuk screenshot) -->
+    <!-- PERINGATAN: Untuk Android 13 (API 33) ke atas, izin ini mungkin tidak lagi diperlukan
+         jika Anda hanya menyimpan ke MediaStore. Namun, untuk kompatibilitas mundur
+         dan jika library menggunakan metode lama, ini masih relevan.
+         Untuk Android 10-12, ini sangat penting bersama dengan requestLegacyExternalStorage. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="runnotrack"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true"> <!-- PENTING: Untuk Android 10 (API 29) ke atas agar bisa menulis ke penyimpanan eksternal -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -44,6 +56,39 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+
+        <!-- PENTING: Diperlukan untuk url_launcher agar dapat membuka WhatsApp -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+
+        <!-- Untuk membuka tautan HTTPS di browser web -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- Untuk aplikasi browser umum yang bisa membuka URL (HTTP) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http"/>
+        </intent>
+
+        <!-- Untuk membuka aplikasi email -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <!-- Untuk membuka aplikasi SMS -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <!-- Untuk membuka aplikasi telepon -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
         </intent>
     </queries>
 </manifest>

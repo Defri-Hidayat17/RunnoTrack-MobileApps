@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:math'; // Import untuk fungsi max
+import 'dart:math';
 
 // Import halaman-halaman navigasi (pastikan file ini ada)
 import 'package:runnotrack/hasilpage.dart';
@@ -15,8 +15,8 @@ import 'package:runnotrack/profilpage.dart';
 import 'package:runnotrack/bottomnavigationbar.dart';
 
 // Import CardData dan DynamicCard dari file terpisah yang baru
-import 'package:runnotrack/models/card_data.dart'; // Pastikan path ini benar
-import 'package:runnotrack/dynamic_card.dart'; // Pastikan path ini benar
+import 'package:runnotrack/models/card_data.dart';
+import 'package:runnotrack/dynamic_card.dart';
 
 // Definisi base URL untuk API Anda
 // PASTIKAN IP INI SESUAI DENGAN IP KOMPUTER/SERVER ANDA
@@ -35,15 +35,18 @@ class _HomePageState extends State<HomePage> {
   String? _loggedInUsername;
   String? _loggedInAccountType;
   String? _profileImageFilename;
+  String? _loggedInUserId;
+
+  bool _isLoadingUserData = true;
+
+  // 🔥 NEW: Kunci SharedPreferences untuk tipe akun, harus konsisten!
+  static const String _prefsKeyAccountType = 'user_account_type';
+
+  // NEW: GlobalKey untuk mengakses _HomeContentPageState
+  final GlobalKey<_HomeContentPageState> _homeContentPageKey = GlobalKey();
 
   // List halaman yang akan ditampilkan di body Scaffold
-  // Gunakan const untuk halaman yang tidak berubah untuk optimasi.
-  final List<Widget> _pages = const [
-    _HomeContentPage(), // Konten untuk tab "Home" (Index 0)
-    Hasilpage(), // Index 1
-    RiwayatPage(), // Index 2
-    ProfilPage(), // Index 3
-  ];
+  List<Widget> _pages = [];
 
   @override
   void initState() {
@@ -54,21 +57,41 @@ class _HomePageState extends State<HomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Memastikan data user dimuat ulang jika ada perubahan (misal setelah login/logout)
-    _loadLoggedInUserData();
   }
 
   Future<void> _loadLoggedInUserData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _loggedInUsername = prefs.getString('username');
-      _loggedInAccountType = prefs.getString('accountType');
+      // 🔥 UPDATE: Gunakan kunci yang konsisten
+      _loggedInAccountType = prefs.getString(_prefsKeyAccountType);
       _profileImageFilename = prefs.getString('photo_url');
-      // print('DEBUG APP BAR: Loaded username: $_loggedInUsername');
-      // print('DEBUG APP BAR: Loaded accountType: $_loggedInAccountType');
-      // print(
-      //   'DEBUG APP BAR: Loaded profileImageFilename (from SharedPreferences): $_profileImageFilename',
-      // );
+      _loggedInUserId = prefs.getString('user_id');
+
+      final String currentUserName = _loggedInUsername ?? 'Pengguna';
+      final String currentUserPhotoUrl =
+          (_profileImageFilename != null && _profileImageFilename!.isNotEmpty)
+              ? _profileImageFilename!
+              : '';
+
+      _pages = [
+        _HomeContentPage(
+          key: _homeContentPageKey,
+          loggedInUserId: _loggedInUserId,
+        ),
+        const Hasilpage(),
+        _loggedInUserId != null
+            ? Riwayatpage(
+              userId: _loggedInUserId!,
+              userName: currentUserName,
+              userPhotoUrl: currentUserPhotoUrl,
+            )
+            : const Center(
+              child: Text('Error: User ID tidak ditemukan. Mohon login ulang.'),
+            ),
+        const ProfilPage(),
+      ];
+      _isLoadingUserData = false;
     });
   }
 
@@ -76,27 +99,27 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;
     });
+    if (index == 0) {
+      _homeContentPageKey.currentState?.refreshHomePageData();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingUserData) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: _buildAppBar(),
-      resizeToAvoidBottomInset: false, // Tetap false seperti permintaan Anda
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          /// PAGE CONTENT
-          // Menggunakan Builder untuk mendapatkan BuildContext yang tepat
-          // agar MediaQuery.of(context) di _HomeContentPage bisa bekerja
-          // dengan benar terkait keyboard.
-          Builder(
-            builder: (context) {
-              return IndexedStack(index: _selectedIndex, children: _pages);
-            },
-          ),
-
-          /// FLOATING NAVBAR (OVERLAY)
+          _pages[_selectedIndex],
           Positioned(
             left: 15,
             right: 15,
@@ -111,13 +134,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- Widget AppBar Kustom ---
   PreferredSizeWidget _buildAppBar() {
     String? fullProfileImageUrl;
     if (_profileImageFilename != null && _profileImageFilename!.isNotEmpty) {
-      // Asumsi _profileImageFilename sudah berupa URL lengkap
-      // Jika hanya nama file, Anda perlu menambahkan base URL server Anda
-      // Contoh: fullProfileImageUrl = '$_baseUrl/uploads/$_profileImageFilename';
       fullProfileImageUrl = _profileImageFilename;
     }
 
@@ -145,7 +164,7 @@ class _HomePageState extends State<HomePage> {
                 SvgPicture.asset('assets/images/logolengkap.svg', height: 35),
                 GestureDetector(
                   onTap: () {
-                    _onItemTapped(3); // Indeks 3 adalah ProfilPage
+                    _onItemTapped(3);
                   },
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -193,8 +212,7 @@ class _HomePageState extends State<HomePage> {
                                                       loadingProgress
                                                           .expectedTotalBytes!
                                                   : null,
-                                          color:
-                                              Colors.white, // Warna indikator
+                                          color: Colors.white,
                                           strokeWidth: 2,
                                         ),
                                       );
@@ -204,12 +222,6 @@ class _HomePageState extends State<HomePage> {
                                       Object exception,
                                       StackTrace? stackTrace,
                                     ) {
-                                      // print(
-                                      //   'DEBUG APP BAR: Failed to load image from URL: $fullProfileImageUrl',
-                                      // );
-                                      // print(
-                                      //   'DEBUG APP BAR: Image loading exception: $exception',
-                                      // );
                                       return const Icon(
                                         Icons.person,
                                         color: Colors.white,
@@ -240,7 +252,8 @@ class _HomePageState extends State<HomePage> {
 
 /// Konten spesifik untuk Tab "Home" yang akan ditampilkan di dalam HomePage.
 class _HomeContentPage extends StatefulWidget {
-  const _HomeContentPage({super.key});
+  final String? loggedInUserId;
+  const _HomeContentPage({super.key, this.loggedInUserId});
 
   @override
   State<_HomeContentPage> createState() => _HomeContentPageState();
@@ -248,7 +261,6 @@ class _HomeContentPage extends StatefulWidget {
 
 class _HomeContentPageState extends State<_HomeContentPage>
     with SingleTickerProviderStateMixin {
-  // --- Styling Umum untuk Input Box ---
   static const Color _darkBlueStrokeColor = Color(0xFF03112B);
   static const List<BoxShadow> _commonBoxShadow = [
     BoxShadow(
@@ -263,14 +275,13 @@ class _HomeContentPageState extends State<_HomeContentPage>
     Key? key,
     required Widget child,
     bool isDisabled = false,
+    EdgeInsetsGeometry? padding,
   }) {
     return Container(
       key: key,
+      padding: padding,
       decoration: BoxDecoration(
-        color:
-            isDisabled
-                ? Colors.grey[200]
-                : Colors.white, // Warna abu-abu jika disabled
+        color: isDisabled ? Colors.grey[200] : Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _darkBlueStrokeColor, width: 1.0),
         boxShadow: _commonBoxShadow,
@@ -282,6 +293,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
   InputDecoration _commonTextFormFieldDecoration({
     String? hintText,
     Widget? suffixIcon,
+    Widget? prefixIcon,
+    bool isEnabled = true,
   }) {
     return InputDecoration(
       hintText: hintText,
@@ -295,32 +308,33 @@ class _HomeContentPageState extends State<_HomeContentPage>
         horizontal: 16.0,
       ),
       suffixIcon: suffixIcon,
+      prefixIcon: prefixIcon,
+      enabled: isEnabled,
     );
   }
-  // --- Akhir Styling Umum ---
 
   // Kunci untuk SharedPreferences
-  static const String _prefsKeySelectedDate =
-      'selectedTrackingDate'; // Kunci baru untuk tanggal
+  static const String _prefsKeySelectedDate = 'selectedTrackingDate';
   static const String _prefsKeySelectedGroup = 'selected_group';
   static const String _prefsKeySelectedUser = 'selected_user';
   static const String _prefsKeyTotalTarget = 'total_target';
   static const String _prefsKeySavedCards = 'saved_cards';
   static const String _prefsKeyNextCardId = 'next_card_id';
+  static const String _prefsKeyTrackingEntryId = 'tracking_entry_id';
+  // 🔥 NEW: Kunci SharedPreferences untuk tipe akun, harus konsisten!
+  static const String _prefsKeyAccountType = 'user_account_type';
 
-  String _selectedDate = DateFormat(
-    'dd/MM/yy',
-  ).format(DateTime.now()); // Inisialisasi langsung dengan tanggal saat ini
+  String _selectedDate = DateFormat('dd/MM/yy').format(DateTime.now());
   String? _selectedGroup;
   String? _selectedUser;
   final TextEditingController _totalTargetController = TextEditingController();
-  List<CardData> _cards = []; // Diharapkan hanya berisi maksimal 1 CardData
+  List<CardData> _cards = [];
 
   List<String> _availableGroups = [];
   List<String> _availableCheckers = [];
 
   String? _loggedInAccountType;
-  int _nextCardId = 1; // Variabel state untuk ID kartu berikutnya
+  int _nextCardId = 1;
 
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -334,10 +348,12 @@ class _HomeContentPageState extends State<_HomeContentPage>
   bool _isCheckerDropdownOpen = false;
   OverlayEntry? _checkerOverlayEntry;
 
-  // NEW: State variable untuk mengunci checker
-  bool _isCheckerLocked = false;
+  // State variable untuk mengunci checker, tanggal, grup
+  bool _isTopFieldsLocked = false;
+  int? _trackingEntryId;
 
-  // --- Fungsi _showSnackBar ---
+  String? _initialTotalTargetValue;
+
   void _showSnackBar(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -345,7 +361,16 @@ class _HomeContentPageState extends State<_HomeContentPage>
       );
     }
   }
-  // --- Akhir Fungsi _showSnackBar ---
+
+  Future<void> refreshHomePageData() async {
+    await _loadLoggedInUserDataFromPrefs();
+    await _fetchGroups();
+    await _loadCurrentState();
+    await _checkIfEntryExistsAndLockTopFields();
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   @override
   void initState() {
@@ -359,27 +384,12 @@ class _HomeContentPageState extends State<_HomeContentPage>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _loadLoggedInUserDataFromPrefs();
-      // Panggil _fetchGroups terlebih dahulu untuk mengisi _availableGroups
-      await _fetchGroups();
-
-      // Sekarang muat sisa state, termasuk tanggal, grup/pengguna yang dipilih
-      await _loadCurrentState();
-
-      // Setelah semua data dimuat, periksa apakah checker harus dikunci
-      _checkIfEntryExistsAndLockChecker();
-
-      setState(() {}); // Pastikan UI diperbarui setelah semua pemuatan
+      await refreshHomePageData();
     });
-
-    // HAPUS LISTENER INI. _totalTargetController akan disimpan saat kartu disave.
-    // _totalTargetController.addListener(_onTotalTargetChanged);
   }
 
   @override
   void dispose() {
-    // HAPUS LISTENER INI.
-    // _totalTargetController.removeListener(_onTotalTargetChanged);
     _totalTargetController.dispose();
     _animationController.dispose();
     _groupOverlayEntry?.remove();
@@ -387,198 +397,122 @@ class _HomeContentPageState extends State<_HomeContentPage>
     super.dispose();
   }
 
-  // HAPUS FUNGSI INI.
-  // void _onTotalTargetChanged() {
-  //   _saveCurrentState(); // Simpan state setiap kali total target berubah
-  // }
-
-  // Getter baru untuk menentukan apakah tombol "Add" harus aktif
-  // Tombol "Add" hanya aktif jika tidak ada kartu yang sedang ditampilkan.
   bool get _canAddCard {
-    return _cards.isEmpty;
+    return _cards.isEmpty && _isTopFieldsLocked && _trackingEntryId != null;
+  }
+
+  bool get _isSaveTotalTargetButtonEnabled {
+    if (!_isTopFieldsLocked) {
+      return _totalTargetController.text.isNotEmpty;
+    }
+    return _totalTargetController.text != (_initialTotalTargetValue ?? '');
   }
 
   Future<void> _loadLoggedInUserDataFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    _loggedInAccountType = prefs.getString('accountType');
-    // print(
-    //   'DEBUG LOAD: _loggedInAccountType loaded: $_loggedInAccountType',
-    // ); // DEBUG
+    // 🔥 UPDATE: Gunakan kunci yang konsisten
+    _loggedInAccountType = prefs.getString(_prefsKeyAccountType);
   }
 
   Future<void> _loadCurrentState() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // print('DEBUG LOAD: Starting _loadCurrentState...'); // DEBUG
-
-    // --- Muat Tanggal ---
     final String? savedDateString = prefs.getString(_prefsKeySelectedDate);
     if (savedDateString != null) {
       _selectedDate = savedDateString;
-      // print('DEBUG LOAD: _selectedDate loaded: $_selectedDate'); // DEBUG
     } else {
       _selectedDate = DateFormat('dd/MM/yy').format(DateTime.now());
-      // print(
-      //   'DEBUG LOAD: No _selectedDate saved, defaulting to: $_selectedDate',
-      // ); // DEBUG
     }
 
-    // Muat total target
     final String? savedTotalTarget = prefs.getString(_prefsKeyTotalTarget);
     if (savedTotalTarget != null && savedTotalTarget.isNotEmpty) {
       _totalTargetController.text = savedTotalTarget;
-      // print(
-      //   'DEBUG LOAD: _totalTargetController loaded: $savedTotalTarget',
-      // ); // DEBUG
+      _initialTotalTargetValue = savedTotalTarget;
     } else {
-      // print('DEBUG LOAD: No _totalTargetController saved.'); // DEBUG
+      _initialTotalTargetValue = null;
     }
 
-    // Muat kartu
     final String? cardsJson = prefs.getString(_prefsKeySavedCards);
     if (cardsJson != null && cardsJson != '[]') {
-      // Pastikan bukan string kosong atau array kosong
       try {
         final List<dynamic> decodedData = json.decode(cardsJson);
         if (decodedData.isNotEmpty) {
           _cards = [CardData.fromJson(decodedData.first)];
-          // print(
-          //   'DEBUG LOAD: Card loaded: ${_cards.first.model} with ID: ${_cards.first.id}',
-          // ); // DEBUG
         } else {
           _cards = [];
-          // print('DEBUG LOAD: No cards found in SharedPreferences.'); // DEBUG
         }
       } catch (e) {
-        // print('DEBUG LOAD: Error decoding saved cards: $e'); // DEBUG
         _showSnackBar('Error memuat kartu tersimpan: $e');
         await prefs.remove(_prefsKeySavedCards);
       }
     } else {
-      _cards = []; // Pastikan _cards kosong jika tidak ada data yang valid
-      // print('DEBUG LOAD: No cards JSON found or it was empty.'); // DEBUG
+      _cards = [];
     }
 
-    // Muat grup
     final String? savedGroup = prefs.getString(_prefsKeySelectedGroup);
-    // print('DEBUG LOAD: savedGroup from prefs: $savedGroup'); // DEBUG
     String? tempSelectedGroup;
     if (savedGroup != null && _availableGroups.contains(savedGroup)) {
       tempSelectedGroup = savedGroup;
-      // print('DEBUG LOAD: savedGroup ($savedGroup) is valid.'); // DEBUG
     } else if (_availableGroups.isNotEmpty) {
-      // Jika tidak ada grup yang disimpan atau tidak valid, coba atur default dari grup yang tersedia
       tempSelectedGroup =
           _availableGroups.contains('A') ? 'A' : _availableGroups.first;
-      // print(
-      //   'DEBUG LOAD: savedGroup ($savedGroup) invalid or null, defaulting to: $tempSelectedGroup',
-      // ); // DEBUG
-    } else {
-      // print(
-      //   'DEBUG LOAD: _availableGroups is empty, cannot set default group.',
-      // ); // DEBUG
     }
     _selectedGroup = tempSelectedGroup;
-    // print(
-    //   'DEBUG LOAD: _selectedGroup after processing: $_selectedGroup',
-    // ); // DEBUG
 
-    // Jika grup dipilih (baik dimuat atau default), ambil checker untuk grup tersebut
     if (_selectedGroup != null && _loggedInAccountType != null) {
-      // print(
-      //   'DEBUG LOAD: Fetching checkers for group: $_selectedGroup and account type: $_loggedInAccountType',
-      // ); // DEBUG
       await _fetchCheckersByGroup(_selectedGroup!, _loggedInAccountType!);
-      // print(
-      //   'DEBUG LOAD: _availableCheckers after fetch: $_availableCheckers',
-      // ); // DEBUG
-
-      // Setelah checker diambil, coba muat pengguna yang dipilih
       final String? savedUser = prefs.getString(_prefsKeySelectedUser);
-      // print('DEBUG LOAD: savedUser from prefs: $savedUser'); // DEBUG
       if (savedUser != null && _availableCheckers.contains(savedUser)) {
         _selectedUser = savedUser;
-        // print(
-        //   'DEBUG LOAD: savedUser ($savedUser) is valid and found in _availableCheckers.',
-        // ); // DEBUG
       } else {
-        _selectedUser = null; // Reset jika tidak ditemukan atau tidak valid
-        // print(
-        //   'DEBUG LOAD: savedUser ($savedUser) invalid or not found in _availableCheckers. Resetting _selectedUser to null.',
-        // ); // DEBUG
+        _selectedUser = null;
       }
     } else {
-      _selectedUser = null; // Tidak ada grup, tidak ada pengguna yang dipilih
-      // print(
-      //   'DEBUG LOAD: _selectedGroup or _loggedInAccountType is null. Cannot fetch checkers.',
-      // ); // DEBUG
+      _selectedUser = null;
     }
-    // print(
-    //   'DEBUG LOAD: _selectedUser after processing: $_selectedUser',
-    // ); // DEBUG
 
-    // Muat next card ID
     _nextCardId = prefs.getInt(_prefsKeyNextCardId) ?? 1;
-    // print('DEBUG LOAD: _nextCardId loaded: $_nextCardId'); // DEBUG
-
-    // print('DEBUG LOAD: _loadCurrentState finished.'); // DEBUG
+    _trackingEntryId = prefs.getInt(_prefsKeyTrackingEntryId);
   }
 
   Future<void> _saveCurrentState() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // --- Simpan Tanggal ---
     await prefs.setString(_prefsKeySelectedDate, _selectedDate);
-    // print('DEBUG SAVE: _selectedDate saved: $_selectedDate'); // DEBUG
 
-    // Simpan grup
     if (_selectedGroup != null) {
       await prefs.setString(_prefsKeySelectedGroup, _selectedGroup!);
-      // print('DEBUG SAVE: _selectedGroup saved: $_selectedGroup'); // DEBUG
     } else {
       await prefs.remove(_prefsKeySelectedGroup);
-      // print('DEBUG SAVE: _selectedGroup removed.'); // DEBUG
     }
 
-    // Simpan pengguna
     if (_selectedUser != null) {
       await prefs.setString(_prefsKeySelectedUser, _selectedUser!);
-      // print('DEBUG SAVE: _selectedUser saved: $_selectedUser'); // DEBUG
     } else {
       await prefs.remove(_prefsKeySelectedUser);
-      // print('DEBUG SAVE: _selectedUser removed.'); // DEBUG
     }
 
-    // Simpan total target
-    await prefs.setString(_prefsKeyTotalTarget, _totalTargetController.text);
-    // print(
-    //   'DEBUG SAVE: _totalTargetController saved: ${_totalTargetController.text}',
-    // ); // DEBUG
+    if (_totalTargetController.text.isNotEmpty) {
+      await prefs.setString(_prefsKeyTotalTarget, _totalTargetController.text);
+    } else {
+      await prefs.remove(_prefsKeyTotalTarget);
+    }
 
-    // Simpan kartu
     final List<Map<String, dynamic>> cardsMap =
         _cards.map((card) => card.toJson()).toList();
     await prefs.setString(_prefsKeySavedCards, json.encode(cardsMap));
-    // print('DEBUG SAVE: Cards saved: ${json.encode(cardsMap)}'); // DEBUG
 
-    // Simpan next card ID (sudah dilakukan di _addCard, tapi tidak ada salahnya di sini juga)
-    await prefs.setInt(
-      _prefsKeyNextCardId,
-      _nextCardId,
-    ); // Simpan ID yang sudah ditingkatkan
-    // print('DEBUG SAVE: _nextCardId saved: $_nextCardId'); // DEBUG
+    await prefs.setInt(_prefsKeyNextCardId, _nextCardId);
+    if (_trackingEntryId != null) {
+      await prefs.setInt(_prefsKeyTrackingEntryId, _trackingEntryId!);
+    } else {
+      await prefs.remove(_prefsKeyTrackingEntryId);
+    }
   }
 
   Future<void> _fetchGroups() async {
-    // print('DEBUG FETCH GROUPS: Starting _fetchGroups...'); // DEBUG
     try {
       final response = await http.get(Uri.parse('$_baseUrl/get_groups.php'));
-
-      // print(
-      //   'DEBUG FETCH GROUPS: Response status code: ${response.statusCode}',
-      // ); // DEBUG
-      // print('DEBUG FETCH GROUPS: Response body: ${response.body}'); // DEBUG
-
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success']) {
@@ -588,27 +522,17 @@ class _HomeContentPageState extends State<_HomeContentPage>
           }
           setState(() {
             _availableGroups = groups;
-            // print(
-            //   'DEBUG FETCH GROUPS: Groups fetched successfully: $_availableGroups',
-            // ); // DEBUG
           });
         } else {
           _showSnackBar('Failed to fetch groups: ${responseData['message']}');
-          // print(
-          //   'DEBUG FETCH GROUPS: API response failed: ${responseData['message']}',
-          // ); // DEBUG
         }
       } else {
         _showSnackBar(
           'Failed to load groups. Status code: ${response.statusCode}',
         );
-        // print(
-        //   'DEBUG FETCH GROUPS: HTTP error: ${response.statusCode}',
-        // ); // DEBUG
       }
     } catch (e) {
       _showSnackBar('Error fetching groups: $e');
-      // print('DEBUG FETCH GROUPS: Error fetching groups: $e'); // DEBUG
     }
   }
 
@@ -616,9 +540,6 @@ class _HomeContentPageState extends State<_HomeContentPage>
     String groupCode,
     String accountType,
   ) async {
-    // print(
-    //   'DEBUG FETCH CHECKERS: Calling _fetchCheckersByGroup for group: $groupCode, accountType: $accountType',
-    // ); // DEBUG
     final url =
         '$_baseUrl/get_checkers_by_group.php?group_code=$groupCode&account_type=$accountType';
     try {
@@ -629,9 +550,6 @@ class _HomeContentPageState extends State<_HomeContentPage>
         if (responseData['success']) {
           setState(() {
             _availableCheckers = List<String>.from(responseData['data']);
-            // print(
-            //   'DEBUG FETCH CHECKERS: Checkers fetched successfully: $_availableCheckers',
-            // ); // DEBUG
           });
           if (_availableCheckers.isEmpty) {
             _showSnackBar(
@@ -640,25 +558,20 @@ class _HomeContentPageState extends State<_HomeContentPage>
           }
         } else {
           _showSnackBar('Gagal mengambil checker: ${responseData['message']}');
-          // print(
-          //   'DEBUG FETCH CHECKERS: API response failed: ${responseData['message']}',
-          // ); // DEBUG
         }
       } else {
         _showSnackBar(
           'Gagal memuat checker. Kode status: ${response.statusCode}',
         );
-        // print(
-        //   'DEBUG FETCH CHECKERS: HTTP error: ${response.statusCode}',
-        // ); // DEBUG
       }
     } catch (e) {
       _showSnackBar('Error saat mengambil checker: $e');
-      // print('DEBUG FETCH CHECKERS: Error fetching checkers: $e'); // DEBUG
     }
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    if (_isTopFieldsLocked) return;
+
     final DateTime parsedDate = DateFormat('dd/MM/yy').parse(_selectedDate);
 
     DateTime initialDateTimeForPicker = parsedDate;
@@ -699,13 +612,13 @@ class _HomeContentPageState extends State<_HomeContentPage>
       setState(() {
         _selectedDate = DateFormat('dd/MM/yy').format(picked);
       });
-      await _saveCurrentState(); // Simpan tanggal yang baru dipilih ke SharedPreferences
-      _checkIfEntryExistsAndLockChecker(); // Periksa status kunci setelah tanggal berubah
+      await _saveCurrentState();
+      await _checkIfEntryExistsAndLockTopFields();
     }
   }
 
-  // Group Dropdown Logic
   void _toggleGroupDropdown() {
+    if (_isTopFieldsLocked) return;
     if (_isGroupDropdownOpen) {
       _groupOverlayEntry?.remove();
       _groupOverlayEntry = null;
@@ -766,8 +679,7 @@ class _HomeContentPageState extends State<_HomeContentPage>
                               onTap: () async {
                                 setState(() {
                                   _selectedGroup = value;
-                                  _selectedUser =
-                                      null; // Reset checker when group changes
+                                  _selectedUser = null;
                                   _toggleGroupDropdown();
                                 });
                                 if (_loggedInAccountType != null) {
@@ -776,8 +688,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
                                     _loggedInAccountType!,
                                   );
                                 }
-                                await _saveCurrentState(); // Simpan setelah grup berubah
-                                _checkIfEntryExistsAndLockChecker(); // Periksa status kunci setelah grup berubah
+                                await _saveCurrentState();
+                                await _checkIfEntryExistsAndLockTopFields();
                               },
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -809,16 +721,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
     );
   }
 
-  // Checker Dropdown Logic
   void _toggleCheckerDropdown() {
-    // Jika checker terkunci, jangan biarkan dropdown terbuka
-    if (_isCheckerLocked) {
-      _showSnackBar(
-        'Checker tidak bisa diubah karena sudah ada data tersimpan untuk tanggal dan grup ini.',
-      );
-      return;
-    }
-
+    if (_isTopFieldsLocked) return;
     if (_isCheckerDropdownOpen) {
       _checkerOverlayEntry?.remove();
       _checkerOverlayEntry = null;
@@ -826,12 +730,7 @@ class _HomeContentPageState extends State<_HomeContentPage>
         _isCheckerDropdownOpen = false;
       });
     } else {
-      if (_checkerDropdownKey.currentContext == null) {
-        // print(
-        //   "DEBUG: _checkerDropdownKey.currentContext is null. Cannot open dropdown.",
-        // ); // DEBUG
-        return;
-      }
+      if (_checkerDropdownKey.currentContext == null) return;
 
       _checkerOverlayEntry = _createCheckerOverlayEntry();
       Overlay.of(context).insert(_checkerOverlayEntry!);
@@ -886,8 +785,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
                                   _selectedUser = value;
                                   _toggleCheckerDropdown();
                                 });
-                                await _saveCurrentState(); // Simpan setelah pengguna berubah
-                                _checkIfEntryExistsAndLockChecker(); // Periksa status kunci setelah checker berubah
+                                await _saveCurrentState();
+                                await _checkIfEntryExistsAndLockTopFields();
                               },
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -919,79 +818,158 @@ class _HomeContentPageState extends State<_HomeContentPage>
     );
   }
 
-  // NEW FUNCTION: Memeriksa apakah ada entri yang sudah tersimpan untuk kombinasi saat ini
-  Future<void> _checkIfEntryExistsAndLockChecker() async {
-    // Hanya periksa jika semua parameter yang diperlukan sudah dipilih
+  Future<void> _checkIfEntryExistsAndLockTopFields() async {
+    if (widget.loggedInUserId == null) {
+      setState(() {
+        _isTopFieldsLocked = false;
+        _trackingEntryId = null;
+        _totalTargetController.clear();
+        _initialTotalTargetValue = null;
+      });
+      _showSnackBar('Error: User ID tidak ditemukan untuk memeriksa entri.');
+      return;
+    }
+
     if (_selectedDate == null ||
         _selectedGroup == null ||
         _selectedUser == null) {
       setState(() {
-        _isCheckerLocked =
-            false; // Pastikan tidak terkunci jika ada parameter yang belum lengkap
+        _isTopFieldsLocked = false;
+        _trackingEntryId = null;
+        _totalTargetController.clear();
+        _initialTotalTargetValue = null;
       });
       return;
     }
 
-    final formattedDate = DateFormat(
-      'yyyy-MM-dd',
-    ).format(DateFormat('dd/MM/yy').parse(_selectedDate));
+    final formattedDate = DateFormat('dd/MM/yy').parse(_selectedDate);
+
     final url =
-        '$_baseUrl/get_tracking_results.php?entry_date=$formattedDate&group_code=$_selectedGroup&checker_username=$_selectedUser';
+        '$_baseUrl/get_tracking_results.php?entry_date=${DateFormat('yyyy-MM-dd').format(formattedDate)}&group_code=$_selectedGroup&checker_username=$_selectedUser&user_id=${widget.loggedInUserId}';
 
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         setState(() {
-          // Checker terkunci jika 'success' true DAN ada 'data' (bukan array kosong)
-          _isCheckerLocked =
-              responseData['success'] == true &&
+          if (responseData['success'] == true &&
               responseData['data'] != null &&
-              (responseData['data'] as List).isNotEmpty;
+              (responseData['data'] as List).isNotEmpty) {
+            _isTopFieldsLocked = true;
+            _trackingEntryId = responseData['data'][0]['tracking_entry_id'];
+            _totalTargetController.text =
+                responseData['data'][0]['total_target'].toString();
+            _initialTotalTargetValue = _totalTargetController.text;
+          } else {
+            _isTopFieldsLocked = false;
+            _trackingEntryId = null;
+            _totalTargetController.clear();
+            _initialTotalTargetValue = null;
+          }
         });
-        // print('DEBUG LOCK: Checker lock status for $_selectedDate, $_selectedGroup, $_selectedUser: $_isCheckerLocked');
+        await _saveCurrentState();
       } else {
         setState(() {
-          _isCheckerLocked =
-              false; // Jika ada error API, asumsikan tidak terkunci
+          _isTopFieldsLocked = false;
+          _trackingEntryId = null;
+          _initialTotalTargetValue = null;
         });
-        // print('DEBUG LOCK: Error checking entry existence. Status: ${response.statusCode}');
       }
     } catch (e) {
       setState(() {
-        _isCheckerLocked =
-            false; // Jika ada error koneksi, asumsikan tidak terkunci
+        _isTopFieldsLocked = false;
+        _trackingEntryId = null;
+        _initialTotalTargetValue = null;
       });
-      // print('DEBUG LOCK: Exception checking entry existence: $e');
     }
   }
 
-  // --- Fungsi _addCard diperbarui untuk menggunakan _nextCardId ---
-  void _addCard() async {
-    // Jika checker terkunci, dan tidak ada kartu yang sedang diedit, berarti tidak bisa menambah kartu baru dengan checker yang berbeda
-    // Ini mungkin tidak perlu jika _isCheckerLocked sudah mencegah perubahan checker
-    // Tapi sebagai safety check, bisa ditambahkan.
-    // Untuk saat ini, kita biarkan logic _canAddCard yang mengontrol.
+  Future<void> _saveTopFieldsToDatabase() async {
+    FocusScope.of(context).unfocus();
 
+    if (widget.loggedInUserId == null) {
+      _showSnackBar('Error: User ID tidak ditemukan. Mohon login ulang.');
+      return;
+    }
+
+    if (_selectedGroup == null || _selectedUser == null) {
+      _showSnackBar('Pilih Grup dan Checker terlebih dahulu!');
+      return;
+    }
+    if (_totalTargetController.text.isEmpty) {
+      _showSnackBar('Isi Total Target terlebih dahulu!');
+      return;
+    }
+
+    final int? parsedTotalTarget = int.tryParse(_totalTargetController.text);
+    if (parsedTotalTarget == null || parsedTotalTarget < 0) {
+      _showSnackBar('Total Target harus berupa angka positif yang valid!');
+      return;
+    }
+
+    Map<String, dynamic> postData = {
+      'entry_date': DateFormat(
+        'yyyy-MM-dd',
+      ).format(DateFormat('dd/MM/yy').parse(_selectedDate)),
+      'group_code': _selectedGroup,
+      'checker_username': _selectedUser,
+      'total_target': parsedTotalTarget,
+      'user_id': widget.loggedInUserId,
+    };
+
+    if (_trackingEntryId != null) {
+      postData['tracking_entry_id'] = _trackingEntryId;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/save_tracking_entry.php'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(postData),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        if (responseData['success']) {
+          setState(() {
+            _trackingEntryId = responseData['tracking_entry_id'];
+            _isTopFieldsLocked = true;
+            _initialTotalTargetValue = _totalTargetController.text;
+          });
+          await _saveCurrentState();
+          _showSnackBar('Data utama berhasil disimpan!');
+        } else {
+          _showSnackBar(
+            'Gagal menyimpan data utama: ${responseData['message']}',
+          );
+        }
+      } else {
+        _showSnackBar(
+          'Gagal menyimpan data utama. Kode status: ${response.statusCode}. Respons: ${response.body}',
+        );
+      }
+    } catch (e) {
+      _showSnackBar('Error saat menyimpan data utama: $e');
+    }
+  }
+
+  void _addCard() async {
+    if (!_isTopFieldsLocked || _trackingEntryId == null) {
+      _showSnackBar(
+        'Harap simpan data Tanggal, Grup, Checker, dan Total Target terlebih dahulu!',
+      );
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
-    int currentCardId =
-        prefs.getInt(_prefsKeyNextCardId) ?? 1; // Ambil ID berikutnya
+    int currentCardId = prefs.getInt(_prefsKeyNextCardId) ?? 1;
 
     setState(() {
-      _cards.clear(); // Hapus semua kartu yang ada (karena sistem satu kartu)
-      _cards.add(
-        CardData(id: currentCardId),
-      ); // Tambahkan satu kartu baru dengan ID yang berurutan
-      _nextCardId = currentCardId + 1; // Tingkatkan ID untuk kartu berikutnya
+      _cards.clear();
+      _cards.add(CardData(id: currentCardId));
+      _nextCardId = currentCardId + 1;
     });
-    await prefs.setInt(
-      _prefsKeyNextCardId,
-      _nextCardId,
-    ); // Simpan ID yang sudah ditingkatkan
-    // print(
-    //   'DEBUG ADD CARD: New card added with ID: $currentCardId. Next ID will be: $_nextCardId',
-    // ); // DEBUG
-    await _saveCurrentState(); // Simpan status kartu yang (sekarang) satu atau kosong
+    await prefs.setInt(_prefsKeyNextCardId, _nextCardId);
+    await _saveCurrentState();
   }
 
   void _updateCardData(
@@ -1000,7 +978,7 @@ class _HomeContentPageState extends State<_HomeContentPage>
     String runnoAwal,
     String runnoAkhir,
     String qty,
-    bool hasChanges, // Parameter `hasChanges` tetap ada
+    bool hasChanges,
   ) {
     setState(() {
       final index = _cards.indexWhere((card) => card.id == id);
@@ -1010,25 +988,21 @@ class _HomeContentPageState extends State<_HomeContentPage>
           runnoAwal: runnoAwal,
           runnoAkhir: runnoAkhir,
           qty: qty,
-          hasChanges: hasChanges, // Menggunakan `hasChanges` dari parameter
+          hasChanges: hasChanges,
         );
       }
     });
-    // HAPUS PEMANGGILAN _saveCurrentState() DI SINI.
-    // Data akan disimpan saat tombol 'Save' diklik.
   }
 
   Future<void> _saveCardData(int id) async {
-    if (_selectedGroup == null || _selectedUser == null) {
-      _showSnackBar('Pilih Grup dan Checker terlebih dahulu!');
-      return;
-    }
-    if (_totalTargetController.text.isEmpty) {
-      _showSnackBar('Isi Total Target terlebih dahulu!');
+    if (_trackingEntryId == null) {
+      _showSnackBar(
+        'ID Entri Tracking tidak ditemukan. Harap simpan data utama terlebih dahulu.',
+      );
       return;
     }
     if (_cards.isEmpty) {
-      _showSnackBar('Tambahkan setidaknya satu kartu untuk disimpan!');
+      _showSnackBar('Tidak ada kartu untuk disimpan!');
       return;
     }
 
@@ -1050,55 +1024,35 @@ class _HomeContentPageState extends State<_HomeContentPage>
       return;
     }
 
-    // Validasi QTY lebih ketat
     final int? parsedQty = int.tryParse(cardToSave.qty);
     if (parsedQty == null || parsedQty <= 0) {
       _showSnackBar('QTY harus berupa angka positif yang valid!');
       return;
     }
 
-    List<Map<String, dynamic>> cardsToSave = [
-      {
-        'model': cardToSave.model,
-        'runno_awal': cardToSave.runnoAwal,
-        'runno_akhir': cardToSave.runnoAkhir,
-        'qty': parsedQty, // Gunakan parsedQty yang sudah divalidasi
-      },
-    ];
-
-    Map<String, dynamic> postData = {
-      'entry_date': DateFormat(
-        'yyyy-MM-dd',
-      ).format(DateFormat('dd/MM/yy').parse(_selectedDate)),
-      'group_code': _selectedGroup,
-      'checker_username': _selectedUser,
-      'total_target': int.tryParse(_totalTargetController.text) ?? 0,
-      'cards': cardsToSave,
+    Map<String, dynamic> cardData = {
+      'tracking_entry_id': _trackingEntryId,
+      'model': cardToSave.model,
+      'runno_awal': cardToSave.runnoAwal,
+      'runno_akhir': cardToSave.runnoAkhir,
+      'qty': parsedQty,
     };
-
-    // print(
-    //   'DEBUG: Data yang dikirim ke server: ${json.encode(postData)}',
-    // ); // DEBUG
 
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/save_tracking_data.php'),
+        Uri.parse('$_baseUrl/save_card_details.php'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode(postData),
+        body: json.encode(cardData),
       );
-
-      // print('DEBUG: Status Code Server: ${response.statusCode}'); // DEBUG
-      // print('DEBUG: Response Body Server: ${response.body}'); // DEBUG
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success']) {
           setState(() {
-            _cards.clear(); // Hapus semua kartu setelah berhasil disimpan
+            _cards.clear();
           });
-          await _saveCurrentState(); // Simpan status kartu yang kosong ke SharedPreferences
+          await _saveCurrentState();
           _showSnackBar('Card ${cardToSave.id} berhasil disimpan ke database!');
-          _checkIfEntryExistsAndLockChecker(); // Perbarui status kunci setelah save
         } else {
           _showSnackBar(
             'Gagal menyimpan data card ${cardToSave.id}: ${responseData['message']}',
@@ -1106,12 +1060,11 @@ class _HomeContentPageState extends State<_HomeContentPage>
         }
       } else {
         _showSnackBar(
-          'Gagal menyimpan data card ${cardToSave.id}. Kode status: ${response.statusCode}. Respons: ${response.body}', // Tambahkan respons body
+          'Gagal menyimpan data card ${cardToSave.id}. Kode status: ${response.statusCode}. Respons: ${response.body}',
         );
       }
     } catch (e) {
       _showSnackBar('Error saat menyimpan data card ${cardToSave.id}: $e');
-      // print('DEBUG: Error saat mengirim data: $e'); // DEBUG
     }
   }
 
@@ -1126,12 +1079,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
     final double boxTopPosition = 190.0;
     final double fabTopOffset = boxTopPosition - (fabDiameter / 2);
 
-    // Tinggi keyboard yang menutupi bagian bawah layar
     final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    // Estimasi tinggi total bottom navigation bar (PillBottomNavigationBar) + padding bawahnya
-    // PillBottomNavigationBar diposisikan dengan bottom: 20, dan asumsi tingginya sekitar 70.
-    const double bottomNavBarTotalHeight =
-        90.0; // 20 (padding) + 70 (estimasi tinggi navbar)
+    const double bottomNavBarTotalHeight = 90.0;
 
     return GestureDetector(
       onTap: () {
@@ -1141,7 +1090,6 @@ class _HomeContentPageState extends State<_HomeContentPage>
       },
       child: Stack(
         children: [
-          // Input fields yang berada di atas background box
           Positioned(
             top: 0,
             left: 0,
@@ -1151,7 +1099,6 @@ class _HomeContentPageState extends State<_HomeContentPage>
               child: _buildTopInputFields(),
             ),
           ),
-          // Background utama (Box Card) dengan radius dan shadow untuk area kartu
           Positioned.fill(
             top: boxTopPosition,
             child: Container(
@@ -1164,23 +1111,17 @@ class _HomeContentPageState extends State<_HomeContentPage>
                 boxShadow: _commonBoxShadow,
               ),
               child: LayoutBuilder(
-                // Gunakan LayoutBuilder untuk mendapatkan tinggi Box Card
                 builder: (BuildContext context, BoxConstraints constraints) {
-                  // constraints.maxHeight adalah tinggi total Box Card (dari boxTopPosition hingga bawah layar)
-                  // Kurangi tinggi keyboard dan tinggi navbar dari tinggi yang tersedia untuk scroll
                   final double availableHeightForScroll = max(
-                    0.0, // Pastikan tinggi tidak negatif
+                    0.0,
                     constraints.maxHeight -
                         keyboardHeight -
                         bottomNavBarTotalHeight,
                   );
 
                   return SizedBox(
-                    // Batasi tinggi SingleChildScrollView
                     height: availableHeightForScroll,
                     child: SingleChildScrollView(
-                      // Padding atas untuk mengakomodasi FAB yang tumpang tindih
-                      // Padding bawah tetap, karena tinggi total sudah diatur oleh SizedBox
                       padding: const EdgeInsets.fromLTRB(
                         16.0,
                         63.0,
@@ -1222,8 +1163,6 @@ class _HomeContentPageState extends State<_HomeContentPage>
               ),
             ),
           ),
-
-          // Tombol Add yang melayang dan gabung dengan Box Card
           Positioned(
             top: fabTopOffset,
             left: MediaQuery.of(context).size.width / 2 - (fabDiameter / 2),
@@ -1232,27 +1171,24 @@ class _HomeContentPageState extends State<_HomeContentPage>
               child: SizedBox.square(
                 dimension: fabDiameter,
                 child: FloatingActionButton(
-                  // Tombol "Add" hanya aktif jika tidak ada kartu yang sedang ditampilkan (_cards.isEmpty).
-                  // Jika ada kartu, onPressed akan menampilkan SnackBar.
-                  onPressed: () async {
-                    if (_selectedGroup == null || _selectedUser == null) {
-                      _showSnackBar('Pilih Grup dan Checker terlebih dahulu!');
-                      return;
-                    }
-                    if (_totalTargetController.text.isEmpty) {
-                      _showSnackBar('Isi Total Target terlebih dahulu!');
-                      return;
-                    }
-                    if (_canAddCard) {
-                      await _animationController.forward();
-                      await _animationController.reverse();
-                      _addCard();
-                    } else {
-                      _showSnackBar(
-                        'Hanya boleh ada satu kartu aktif pada satu waktu. Harap simpan atau hapus kartu yang ada terlebih dahulu.',
-                      );
-                    }
-                  },
+                  onPressed:
+                      _canAddCard
+                          ? () async {
+                            await _animationController.forward();
+                            await _animationController.reverse();
+                            _addCard();
+                          }
+                          : () {
+                            if (!_isTopFieldsLocked) {
+                              _showSnackBar(
+                                'Harap simpan data Tanggal, Grup, Checker, dan Total Target terlebih dahulu!',
+                              );
+                            } else if (_cards.isNotEmpty) {
+                              _showSnackBar(
+                                'Hanya boleh ada satu kartu aktif pada satu waktu. Harap simpan atau hapus kartu yang ada terlebih dahulu.',
+                              );
+                            }
+                          },
                   backgroundColor: const Color(0xFF03112B),
                   shape: const CircleBorder(),
                   elevation: 4.0,
@@ -1267,16 +1203,17 @@ class _HomeContentPageState extends State<_HomeContentPage>
     );
   }
 
-  // --- Widget Input Field Bagian Atas ---
   Widget _buildTopInputFields() {
     return Column(
       children: [
         Row(
           children: [
             Expanded(
+              flex: 10,
               child: _buildInputContainer(
+                isDisabled: _isTopFieldsLocked,
                 child: GestureDetector(
-                  onTap: () => _selectDate(context),
+                  onTap: _isTopFieldsLocked ? null : () => _selectDate(context),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -1288,27 +1225,38 @@ class _HomeContentPageState extends State<_HomeContentPage>
                         Expanded(
                           child: Text(
                             _selectedDate,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
-                              color: Colors.black87,
+                              color:
+                                  _isTopFieldsLocked
+                                      ? Colors.grey
+                                      : Colors.black87,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Icon(Icons.calendar_today, color: Colors.grey),
+                        Icon(
+                          Icons.calendar_today,
+                          color:
+                              _isTopFieldsLocked
+                                  ? Colors.grey[400]
+                                  : Colors.grey,
+                        ),
                       ],
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const Spacer(flex: 1),
             Expanded(
+              flex: 10,
               child: _buildInputContainer(
-                key: _groupDropdownKey, // Tambahkan key untuk dropdown grup
+                key: _groupDropdownKey,
+                isDisabled: _isTopFieldsLocked,
                 child: GestureDetector(
                   onTap:
-                      _availableGroups.isNotEmpty
+                      (_availableGroups.isNotEmpty && !_isTopFieldsLocked)
                           ? () => _toggleGroupDropdown()
                           : null,
                   child: Padding(
@@ -1325,7 +1273,7 @@ class _HomeContentPageState extends State<_HomeContentPage>
                             style: TextStyle(
                               fontSize: 16,
                               color:
-                                  _selectedGroup == null
+                                  _selectedGroup == null || _isTopFieldsLocked
                                       ? Colors.grey
                                       : Colors.black87,
                             ),
@@ -1336,7 +1284,10 @@ class _HomeContentPageState extends State<_HomeContentPage>
                           _isGroupDropdownOpen
                               ? Icons.keyboard_arrow_up
                               : Icons.group,
-                          color: Colors.grey,
+                          color:
+                              _isTopFieldsLocked
+                                  ? Colors.grey[400]
+                                  : Colors.grey,
                         ),
                       ],
                     ),
@@ -1344,15 +1295,15 @@ class _HomeContentPageState extends State<_HomeContentPage>
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const Spacer(flex: 1),
             Expanded(
+              flex: 10,
               child: _buildInputContainer(
-                key: _checkerDropdownKey, // Re-add key for dropdown
-                isDisabled: _isCheckerLocked, // NEW: Nonaktifkan jika terkunci
+                key: _checkerDropdownKey,
+                isDisabled: _isTopFieldsLocked,
                 child: GestureDetector(
                   onTap:
-                      (_availableCheckers.isNotEmpty &&
-                              !_isCheckerLocked) // NEW: Hanya bisa disentuh jika tidak terkunci
+                      (_availableCheckers.isNotEmpty && !_isTopFieldsLocked)
                           ? () => _toggleCheckerDropdown()
                           : null,
                   child: Padding(
@@ -1369,8 +1320,7 @@ class _HomeContentPageState extends State<_HomeContentPage>
                             style: TextStyle(
                               fontSize: 16,
                               color:
-                                  _selectedUser == null ||
-                                          _isCheckerLocked // NEW: Ubah warna jika terkunci
+                                  _selectedUser == null || _isTopFieldsLocked
                                       ? Colors.grey
                                       : Colors.black87,
                             ),
@@ -1378,12 +1328,15 @@ class _HomeContentPageState extends State<_HomeContentPage>
                           ),
                         ),
                         Icon(
-                          _isCheckerLocked // NEW: Tampilkan ikon kunci jika terkunci
+                          _isTopFieldsLocked
                               ? Icons.lock
                               : (_isCheckerDropdownOpen
                                   ? Icons.keyboard_arrow_up
                                   : Icons.person),
-                          color: Colors.grey,
+                          color:
+                              _isTopFieldsLocked
+                                  ? Colors.grey[400]
+                                  : Colors.grey,
                         ),
                       ],
                     ),
@@ -1394,39 +1347,71 @@ class _HomeContentPageState extends State<_HomeContentPage>
           ],
         ),
         const SizedBox(height: 16),
-        _buildInputContainer(
-          child: TextFormField(
-            controller: _totalTargetController,
-            keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
-            decoration: _commonTextFormFieldDecoration(
-              hintText: 'Total Target',
-              // --- SATU-SATUNYA PERUBAHAN DI SINI ---
-              suffixIcon: IconButton(
-                icon: const Icon(
-                  Icons.save,
-                  color: Colors.green,
-                ), // Ikon save hijau
-                onPressed: () async {
-                  FocusScope.of(context).unfocus(); // Sembunyikan keyboard
-                  await _saveCurrentState(); // Simpan state saat editing selesai
-                  _showSnackBar(
-                    'Total Target berhasil disimpan!',
-                  ); // Tampilkan notifikasi
-                },
+        Row(
+          children: [
+            Expanded(
+              flex: 21,
+              child: _buildInputContainer(
+                child: TextFormField(
+                  controller: _totalTargetController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  enabled: true,
+                  decoration: _commonTextFormFieldDecoration(
+                    hintText: 'Total Target',
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      // _isSaveTotalTargetButtonEnabled akan dihitung ulang
+                    });
+                  },
+                  onEditingComplete: () {
+                    FocusScope.of(context).unfocus();
+                  },
+                  onTapOutside: (event) {
+                    FocusScope.of(context).unfocus();
+                  },
+                ),
               ),
-              // --- AKHIR PERUBAHAN ---
             ),
-            // Tambahkan onEditingComplete untuk menyimpan total target saat keyboard ditutup atau fokus hilang
-            onEditingComplete: () async {
-              FocusScope.of(context).unfocus(); // Sembunyikan keyboard
-              await _saveCurrentState(); // Simpan state saat editing selesai
-            },
-            onTapOutside: (event) async {
-              FocusScope.of(context).unfocus(); // Sembunyikan keyboard
-              await _saveCurrentState(); // Simpan state saat fokus hilang
-            },
-          ),
+            const Spacer(flex: 1),
+            Expanded(
+              flex: 10,
+              child: ElevatedButton(
+                onPressed:
+                    _isSaveTotalTargetButtonEnabled
+                        ? _saveTopFieldsToDatabase
+                        : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      _isSaveTotalTargetButtonEnabled
+                          ? const Color(0xFF4CAF50)
+                          : Colors.grey,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  elevation: 2,
+                  shadowColor: Colors.grey,
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.save, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Save',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );

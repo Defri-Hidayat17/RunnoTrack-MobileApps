@@ -1,59 +1,50 @@
 <?php
 header('Content-Type: application/json');
-include 'db_connect.php'; // Pastikan path ini benar ke file koneksi database Anda
+include 'db_connect.php'; // Pastikan file koneksi database Anda ada
 
-$input = json_decode(file_get_contents('php://input'), true);
+$response = array('success' => false, 'message' => 'An unknown error occurred.');
 
-$entry_date = $input['entry_date'] ?? '';
-$group_code = $input['group_code'] ?? '';
-$checker_username = $input['checker_username'] ?? '';
-$model = $input['model'] ?? '';
-$runno_awal = $input['runno_awal'] ?? '';
-$runno_akhir = $input['runno_akhir'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
 
-if (empty($entry_date) || empty($group_code) || empty($checker_username) || empty($model) || empty($runno_awal) || empty($runno_akhir)) {
-    echo json_encode(['success' => false, 'message' => 'Missing required parameters.']);
-    exit();
-}
+    $card_detail_id = $input['card_detail_id'] ?? null; // Mengambil card_detail_id
 
-// 1. Dapatkan ID dari tracking_entries
-$stmt = $conn->prepare("SELECT id FROM tracking_entries WHERE entry_date = ? AND group_code = ? AND checker_username = ?");
-if (!$stmt) {
-    echo json_encode(['success' => false, 'message' => 'Prepare statement for tracking_entries failed: ' . $conn->error]);
-    exit();
-}
-$stmt->bind_param("sss", $entry_date, $group_code, $checker_username);
-$stmt->execute();
-$result = $stmt->get_result();
-$entry = $result->fetch_assoc();
-$stmt->close();
+    if (is_null($card_detail_id)) {
+        $response['message'] = 'Missing required parameter: card_detail_id.';
+        echo json_encode($response);
+        $conn->close();
+        exit();
+    }
 
-if (!$entry) {
-    echo json_encode(['success' => false, 'message' => 'Tracking entry not found for deletion.']);
-    exit();
-}
+    $conn->begin_transaction();
 
-$tracking_entry_id = $entry['id']; // Mengambil 'id' dari tracking_entries
+    try {
+        // Hapus kartu dari tracking_card_details berdasarkan ID unik
+        $stmt = $conn->prepare("DELETE FROM tracking_card_details WHERE id = ?");
+        if (!$stmt) {
+            throw new Exception("Prepare statement failed: " . $conn->error);
+        }
+        $stmt->bind_param("i", $card_detail_id); // Bind sebagai integer
+        $stmt->execute();
 
-// 2. Hapus kartu spesifik dari tracking_card_details
-$stmt = $conn->prepare("DELETE FROM tracking_card_details WHERE tracking_entry_id = ? AND model = ? AND runno_awal = ? AND runno_akhir = ?");
-if (!$stmt) {
-    echo json_encode(['success' => false, 'message' => 'Prepare statement for tracking_card_details delete failed: ' . $conn->error]);
-    exit();
-}
-$stmt->bind_param("isss", $tracking_entry_id, $model, $runno_awal, $runno_akhir);
+        if ($stmt->affected_rows > 0) {
+            $conn->commit();
+            $response['success'] = true;
+            $response['message'] = 'Kartu berhasil dihapus.';
+        } else {
+            $conn->rollback();
+            $response['message'] = 'Kartu tidak ditemukan atau tidak ada perubahan.';
+        }
+        $stmt->close();
 
-if ($stmt->execute()) {
-    if ($stmt->affected_rows > 0) {
-        // HANYA HAPUS KARTU. TIDAK PERLU UPDATE total_actual DI tracking_entries DARI SINI
-        // Karena Flutter akan menghitung ulang total_actual setelah fetch data baru.
-        echo json_encode(['success' => true, 'message' => 'Card deleted successfully.']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Card not found or already deleted.']);
+    } catch (Exception $e) {
+        $conn->rollback();
+        $response['message'] = 'Error deleting card: ' . $e->getMessage();
     }
 } else {
-    echo json_encode(['success' => false, 'message' => 'Failed to delete card: ' . $stmt->error]);
+    $response['message'] = 'Invalid request method. Only POST is allowed.';
 }
 
 $conn->close();
+echo json_encode($response);
 ?>

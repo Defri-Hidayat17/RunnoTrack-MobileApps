@@ -5,8 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:runnotrack/onboardingpage.dart';
 import 'package:runnotrack/homepage.dart';
-import 'package:runnotrack/loginpage_user.dart'; // Ini tetap diimport, tapi tidak langsung digunakan di sini
-import 'package:runnotrack/loginpage.dart'; // <--- PASTIKAN INI DIIMPORT
+import 'package:runnotrack/loginpage_user.dart'; // Ini mungkin tidak lagi diperlukan jika loginpage.dart sudah cukup
+import 'package:runnotrack/loginpage.dart';
+import 'package:runnotrack/admin_main_scaffold.dart'; // <--- IMPORT INI UNTUK ADMIN
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -23,6 +24,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   static const String _prefsKeyIsLoggedIn = 'is_logged_in';
   static const String _prefsKeyIsOnboarded = 'is_onboarded';
+  // Kunci ini diubah dari _prefsKeyAccountType menjadi _prefsKeyRole
+  static const String _prefsKeyRole = 'user_role'; // <--- KUNCI BARU UNTUK ROLE
 
   @override
   void initState() {
@@ -58,27 +61,44 @@ class _SplashScreenState extends State<SplashScreen>
     final prefs = await SharedPreferences.getInstance();
     final bool isLoggedIn = prefs.getBool(_prefsKeyIsLoggedIn) ?? false;
     final bool isOnboarded = prefs.getBool(_prefsKeyIsOnboarded) ?? false;
+    // Mengambil 'role' dari SharedPreferences, bukan 'accountType'
+    final String? role = prefs.getString(_prefsKeyRole); // <--- AMBIL ROLE
 
     // --- DEBUGGING PRINTS ---
     print('--- SplashScreen Navigation Check ---');
     print('isLoggedIn: $isLoggedIn');
     print('isOnboarded: $isOnboarded');
+    print('role: $role'); // <--- DEBUGGING ROLE
     print('-----------------------------------');
     // --- END DEBUGGING PRINTS ---
 
     if (isLoggedIn) {
-      print('Navigating to HomePage (User is logged in)');
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
+      // Logika routing sekarang berdasarkan 'role'
+      if (role == 'admin') {
+        print('Navigating to AdminMainScaffold (Admin role is logged in)');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const AdminMainScaffold()),
+        );
+      } else if (role == 'operator') {
+        // Menggunakan 'operator' sesuai DB Anda
+        print('Navigating to HomePage (Operator role is logged in)');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      } else {
+        // Jika isLoggedIn true tapi role tidak dikenal/null, paksa login ulang
+        print(
+          'Navigating to LoginPage (Logged in but unknown role, forcing re-login)',
+        );
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
     } else {
       if (isOnboarded) {
         print('Navigating to LoginPage (User is onboarded but not logged in)');
-        // >>> PERBAIKAN DI SINI: Navigasi ke LoginPage (pemilihan akun)
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => const LoginPage(),
-          ), // <--- UBAH INI
+          MaterialPageRoute(builder: (context) => const LoginPage()),
         );
       } else {
         print(
@@ -108,9 +128,35 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         children: <Widget>[
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/bgsplashscreen.png',
-              fit: BoxFit.cover,
+            child: Stack(
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF0B3C6F),
+                        Color(0xFF021E3C),
+                        Color(0xFF000F25),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                      colors: [
+                        Color(0x220B3C6F),
+                        Color(0x33021E3C),
+                        Color(0x44000F25),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Center(

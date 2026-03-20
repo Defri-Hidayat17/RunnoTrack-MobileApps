@@ -34,6 +34,14 @@ class _HasilpageState extends State<Hasilpage> {
     ),
   ];
 
+  // --- Konstanta untuk Layout Tombol dan Status ---
+  static const double _kActionElementHeight =
+      44.0; // Tinggi standar untuk tombol dan status
+  static const double _kButtonHorizontalPadding =
+      15.0; // Padding horizontal standar untuk tombol
+  static const double _kSpacing = 8.0; // Spasi standar antar elemen
+  // --- Akhir Konstanta ---
+
   Widget _buildSummaryFloatingLabelBox({
     required String label,
     required String value,
@@ -99,10 +107,17 @@ class _HasilpageState extends State<Hasilpage> {
   static const String _prefsKeySelectedUser = 'selected_user';
   static const String _prefsKeyTotalTarget = 'total_target';
 
+  // Kunci SharedPreferences BARU untuk status konfirmasi sementara
+  static const String _prefsKeyLastConfirmedStatus = 'lastConfirmedStatus';
+  static const String _prefsKeyLastConfirmedDate = 'lastConfirmedDate';
+  static const String _prefsKeyLastConfirmedGroup = 'lastConfirmedGroup';
+  static const String _prefsKeyLastConfirmedChecker = 'lastConfirmedChecker';
+
   String _selectedDate = DateFormat('dd/MM/yy').format(DateTime.now());
   String? _selectedGroup;
   String? _selectedChecker;
   String? _loggedInAccountType;
+  String? _loggedInUserId; // 🔥 NEW: Variabel untuk menyimpan user_id
 
   List<CardData> _resultCards = [];
   bool _isLoading = false;
@@ -129,9 +144,6 @@ class _HasilpageState extends State<Hasilpage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // This is called when the dependencies of this State object change.
-    // This is a good place to re-read SharedPreferences if they might have been updated
-    // by another part of the app (like HomePage).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshData(); // Re-load data if dependencies (like SharedPreferences) change
     });
@@ -148,37 +160,80 @@ class _HasilpageState extends State<Hasilpage> {
 
     final prefs = await SharedPreferences.getInstance();
 
+    // --- LOGIKA BARU: Cek status konfirmasi sementara ---
+    bool lastConfirmedStatus =
+        prefs.getBool(_prefsKeyLastConfirmedStatus) ?? false;
+    String? lastConfirmedDate = prefs.getString(_prefsKeyLastConfirmedDate);
+    String? lastConfirmedGroup = prefs.getString(_prefsKeyLastConfirmedGroup);
+    String? lastConfirmedChecker = prefs.getString(
+      _prefsKeyLastConfirmedChecker,
+    );
+
+    if (lastConfirmedStatus &&
+        lastConfirmedDate != null &&
+        lastConfirmedGroup != null &&
+        lastConfirmedChecker != null) {
+      // Jika ada status konfirmasi sementara, tampilkan itu dan kosongkan data
+      if (mounted) {
+        setState(() {
+          _selectedDate = lastConfirmedDate;
+          _selectedGroup = lastConfirmedGroup;
+          _selectedChecker = lastConfirmedChecker;
+          _loggedInAccountType = prefs.getString(
+            'accountType',
+          ); // Tetap ambil dari prefs
+          _loggedInUserId = prefs.getString('user_id'); // 🔥 NEW: Ambil user_id
+          _totalTarget = 0; // Kosongkan
+          _resultCards = []; // Kosongkan
+          _totalActual = 0; // Kosongkan
+          _totalDifference = 0; // Kosongkan
+          _overallEfficiency = 0.0; // Kosongkan
+          _isEntryConfirmed = true; // Set ke sukses
+        });
+      }
+      // Hapus status konfirmasi sementara agar tidak tampil lagi di refresh berikutnya
+      await prefs.remove(_prefsKeyLastConfirmedStatus);
+      await prefs.remove(_prefsKeyLastConfirmedDate);
+      await prefs.remove(_prefsKeyLastConfirmedGroup);
+      await prefs.remove(_prefsKeyLastConfirmedChecker);
+      return; // Selesai, jangan lanjutkan ke pengambilan data API
+    }
+    // --- AKHIR LOGIKA BARU ---
+
+    // --- LOGIKA LAMA (setelah pemeriksaan status sementara) ---
     final String newSelectedDate =
         prefs.getString(_prefsKeySelectedDate) ??
         DateFormat('dd/MM/yy').format(DateTime.now());
     final String? newSelectedGroup = prefs.getString(_prefsKeySelectedGroup);
     final String? newSelectedChecker = prefs.getString(_prefsKeySelectedUser);
     final String? newLoggedInAccountType = prefs.getString('accountType');
+    final String? newLoggedInUserId = prefs.getString(
+      'user_id',
+    ); // 🔥 NEW: Ambil user_id dari SharedPreferences
     final int newTotalTarget =
         int.tryParse(prefs.getString(_prefsKeyTotalTarget) ?? '0') ?? 0;
 
-    // Selalu perbarui variabel state dengan nilai terbaru dari SharedPreferences.
-    // Ini memastikan _fetchTrackingResults menggunakan data yang paling mutakhir.
-    // Ini juga mengatasi masalah "kelap kelip" total target.
     if (mounted) {
       setState(() {
         _selectedDate = newSelectedDate;
         _selectedGroup = newSelectedGroup;
         _selectedChecker = newSelectedChecker;
         _loggedInAccountType = newLoggedInAccountType;
-        _totalTarget =
-            newTotalTarget; // _totalTarget selalu dari SharedPreferences
+        _loggedInUserId = newLoggedInUserId; // 🔥 NEW: Set user_id
+        _totalTarget = newTotalTarget;
       });
     }
 
-    // Sekarang, dengan variabel state yang sudah diperbarui, ambil hasil tracking
-    if (_selectedGroup != null && _selectedChecker != null) {
+    // 🔥 MODIFIED: Tambahkan _loggedInUserId != null sebagai kondisi
+    if (_selectedGroup != null &&
+        _selectedChecker != null &&
+        _loggedInUserId != null) {
       await _fetchTrackingResults(
         date: _selectedDate,
         group: _selectedGroup!,
         checker: _selectedChecker!,
-        target:
-            _totalTarget, // Menggunakan _totalTarget dari state yang sudah diperbarui
+        target: _totalTarget,
+        userId: _loggedInUserId!, // 🔥 NEW: Teruskan userId
       );
     } else {
       // print(
@@ -201,15 +256,16 @@ class _HasilpageState extends State<Hasilpage> {
     required String date,
     required String group,
     required String checker,
-    required int
-    target, // Ini adalah nilai target terbaru dari SharedPreferences
+    required int target,
+    required String userId, // 🔥 NEW: Tambahkan parameter userId
   }) async {
     // print(
     //   'DEBUG Hasilpage: _fetchTrackingResults called with date=$date, group=$group, checker=$checker, target=$target',
     // );
-    if (group == null || checker == null) {
+    // 🔥 MODIFIED: Tambahkan userId ke kondisi validasi null
+    if (group == null || checker == null || userId == null) {
       // print(
-      //   'DEBUG Hasilpage: Skipping API call due to null parameters: Group=$group, Checker=$checker',
+      //   'DEBUG Hasilpage: Skipping API call due to null parameters: Group=$group, Checker=$checker, UserId=$userId',
       // );
       if (mounted) {
         setState(() {
@@ -217,7 +273,8 @@ class _HasilpageState extends State<Hasilpage> {
           _totalActual = 0;
           _totalDifference = _totalActual - target;
           _overallEfficiency = target > 0 ? (_totalActual / target) * 100 : 0.0;
-          _isEntryConfirmed = false;
+          _isEntryConfirmed =
+              false; // Jika parameter null, anggap belum dikonfirmasi
         });
       }
       return;
@@ -232,8 +289,9 @@ class _HasilpageState extends State<Hasilpage> {
     final formattedDate = DateFormat(
       'yyyy-MM-dd',
     ).format(DateFormat('dd/MM/yy').parse(date));
+    // 🔥 MODIFIED: Tambahkan user_id ke URL
     final url =
-        '$_baseUrl/get_tracking_results.php?entry_date=$formattedDate&group_code=$group&checker_username=$checker';
+        '$_baseUrl/get_tracking_results.php?entry_date=$formattedDate&group_code=$group&checker_username=$checker&user_id=$userId';
     // print('DEBUG Hasilpage: Attempting to fetch from URL: $url');
 
     try {
@@ -247,17 +305,15 @@ class _HasilpageState extends State<Hasilpage> {
         if (responseData['success']) {
           List<CardData> fetchedCards = [];
           int currentTotalActual = 0;
-          bool entryConfirmedStatus = false;
-          // int fetchedTotalTarget = target; // Baris ini tidak lagi kita butuhkan
+          bool entryConfirmedStatus = false; // Default ke false
 
           if (responseData['data'] != null &&
               responseData['data'] is List &&
               responseData['data'].isNotEmpty) {
             var entryItem = responseData['data'][0];
-            entryConfirmedStatus = (entryItem['is_confirmed'] == '1');
-            // Hapus atau komentari baris di bawah ini.
-            // Kita tidak ingin menimpa _totalTarget dari state dengan nilai dari database yang mungkin lama.
-            // fetchedTotalTarget = int.tryParse(entryItem['total_target'].toString()) ?? target;
+            // Ambil status konfirmasi dari API
+            entryConfirmedStatus =
+                int.tryParse(entryItem['is_confirmed'].toString()) == 1;
 
             if (entryItem['cards'] != null && entryItem['cards'] is List) {
               for (int i = 0; i < entryItem['cards'].length; i++) {
@@ -266,12 +322,17 @@ class _HasilpageState extends State<Hasilpage> {
                     int.tryParse(cardJson['qty'].toString()) ?? 0;
                 fetchedCards.add(
                   CardData(
-                    id: i + 1,
+                    id: i + 1, // Local UI ID
+                    cardDetailId: int.tryParse(
+                      cardJson['id'].toString(),
+                    ), // <--- PENTING: Ambil card_detail_id dari JSON
                     model: cardJson['model'] ?? '',
                     runnoAwal: cardJson['runno_awal'] ?? '',
                     runnoAkhir: cardJson['runno_akhir'] ?? '',
                     qty: actualQtyInt.toString(),
                     hasChanges: false,
+                    shouldResetEditMode:
+                        false, // BARU: Pastikan ini false saat memuat dari server
                   ),
                 );
                 currentTotalActual += actualQtyInt;
@@ -285,8 +346,6 @@ class _HasilpageState extends State<Hasilpage> {
           if (mounted) {
             setState(() {
               _resultCards = fetchedCards;
-              // Hapus baris ini. _totalTarget sudah diatur di _refreshData dari SharedPreferences.
-              // _totalTarget = fetchedTotalTarget;
               _totalActual = currentTotalActual;
               _totalDifference =
                   currentTotalActual -
@@ -295,7 +354,8 @@ class _HasilpageState extends State<Hasilpage> {
                   _totalTarget > 0
                       ? (currentTotalActual / _totalTarget) * 100
                       : 0.0;
-              _isEntryConfirmed = entryConfirmedStatus;
+              _isEntryConfirmed =
+                  entryConfirmedStatus; // Update status konfirmasi dari API
             });
           }
         } else {
@@ -310,7 +370,8 @@ class _HasilpageState extends State<Hasilpage> {
               _totalDifference = _totalActual - _totalTarget;
               _overallEfficiency =
                   _totalTarget > 0 ? (_totalActual / _totalTarget) * 100 : 0.0;
-              _isEntryConfirmed = false;
+              _isEntryConfirmed =
+                  false; // Jika tidak ada data, anggap belum dikonfirmasi
             });
           }
         }
@@ -328,7 +389,7 @@ class _HasilpageState extends State<Hasilpage> {
             _totalDifference = _totalActual - _totalTarget;
             _overallEfficiency =
                 _totalTarget > 0 ? (_totalActual / _totalTarget) * 100 : 0.0;
-            _isEntryConfirmed = false;
+            _isEntryConfirmed = false; // Jika error, anggap belum dikonfirmasi
           });
         }
       }
@@ -342,7 +403,7 @@ class _HasilpageState extends State<Hasilpage> {
           _totalDifference = _totalActual - _totalTarget;
           _overallEfficiency =
               _totalTarget > 0 ? (_totalActual / _totalTarget) * 100 : 0.0;
-          _isEntryConfirmed = false;
+          _isEntryConfirmed = false; // Jika error, anggap belum dikonfirmasi
         });
       }
     } finally {
@@ -354,36 +415,20 @@ class _HasilpageState extends State<Hasilpage> {
     }
   }
 
-  void _updateCardData(
-    int id,
-    String model,
-    String runnoAwal,
-    String runnoAkhir,
-    String qty,
-    bool hasChanges,
-  ) {
+  // NEW: Callback for when a card's data changes in HasilpageCardWidget
+  void _onCardDataChanged(int localId, CardData updatedCardData) {
     if (mounted) {
-      final index = _resultCards.indexWhere((card) => card.id == id);
+      final index = _resultCards.indexWhere((card) => card.id == localId);
       if (index != -1) {
-        final oldCard = _resultCards[index];
-
-        bool needsUpdate = false;
-        if (oldCard.model != model) needsUpdate = true;
-        if (oldCard.runnoAwal != runnoAwal) needsUpdate = true;
-        if (oldCard.runnoAkhir != runnoAkhir) needsUpdate = true;
-        if (oldCard.qty != qty) needsUpdate = true;
-        if (oldCard.hasChanges != hasChanges) needsUpdate = true;
-
-        if (needsUpdate) {
+        if (_resultCards[index] != updatedCardData) {
           setState(() {
-            _resultCards[index] = oldCard.copyWith(
-              model: model,
-              runnoAwal: runnoAwal,
-              runnoAkhir: runnoAkhir,
-              qty: qty,
-              hasChanges: hasChanges,
+            _resultCards[index] = updatedCardData.copyWith(
+              hasChanges: true, // Mark as changed
+              shouldResetEditMode:
+                  updatedCardData.shouldResetEditMode ||
+                  _resultCards[index].shouldResetEditMode,
             );
-            _recalculateSummaryValues();
+            _recalculateSummaryValues(); // Recalculate summaries immediately
           });
         }
       }
@@ -401,7 +446,8 @@ class _HasilpageState extends State<Hasilpage> {
         _totalTarget > 0 ? (_totalActual / _totalTarget) * 100 : 0.0;
   }
 
-  Future<void> _saveCardData(int id) async {
+  // NEW: Callback for when the "Save" button in HasilpageCardWidget is pressed
+  Future<void> _onSaveUpdatedCard(CardData cardToSave) async {
     if (_isEntryConfirmed) {
       _showSnackBar('Data sudah dikonfirmasi, tidak bisa diubah.');
       return;
@@ -411,12 +457,7 @@ class _HasilpageState extends State<Hasilpage> {
       return;
     }
 
-    final cardToSave = _resultCards.firstWhere((card) => card.id == id);
-    if (!cardToSave.hasChanges) {
-      _showSnackBar('Tidak ada perubahan pada kartu ini untuk disimpan!');
-      return;
-    }
-
+    // Ensure the cardToSave has valid data
     if (cardToSave.model.isEmpty ||
         cardToSave.runnoAwal.isEmpty ||
         cardToSave.runnoAkhir.isEmpty ||
@@ -431,14 +472,13 @@ class _HasilpageState extends State<Hasilpage> {
       return;
     }
 
-    List<Map<String, dynamic>> cardsToUpdate =
+    // Prepare all cards for sending to the backend
+    List<Map<String, dynamic>> cardsToSend =
         _resultCards.map((card) {
-          return {
-            'model': card.model,
-            'runno_awal': card.runnoAwal,
-            'runno_akhir': card.runnoAkhir,
-            'qty': int.tryParse(card.qty) ?? 0,
-          };
+          if (card.id == cardToSave.id) {
+            return cardToSave.copyWith(hasChanges: false).toJson();
+          }
+          return card.toJson();
         }).toList();
 
     Map<String, dynamic> postData = {
@@ -448,10 +488,10 @@ class _HasilpageState extends State<Hasilpage> {
       'group_code': _selectedGroup,
       'checker_username': _selectedChecker,
       'total_target': _totalTarget,
-      'cards': cardsToUpdate,
+      'cards': cardsToSend,
     };
 
-    // print('DEBUG Hasilpage: Data to update: ${json.encode(postData)}');
+    print('DEBUG Hasilpage: Data to update/save: ${json.encode(postData)}');
 
     try {
       final response = await http.post(
@@ -460,22 +500,41 @@ class _HasilpageState extends State<Hasilpage> {
         body: json.encode(postData),
       );
 
-      // print(
-      //   'DEBUG Hasilpage: Update Card Response Status Code: ${response.statusCode}',
-      // );
-      // print('DEBUG Hasilpage: Update Card Response Body: ${response.body}');
+      print(
+        'DEBUG Hasilpage: Update/Save Card Response Status Code: ${response.statusCode}',
+      );
+      print(
+        'DEBUG Hasilpage: Update/Save Card Response Body: ${response.body}',
+      );
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success']) {
           _showSnackBar('Kartu berhasil diperbarui!');
-          // After successful save, refresh the data to reflect changes and reset hasChanges
-          if (_selectedGroup != null && _selectedChecker != null) {
+
+          if (mounted) {
+            setState(() {
+              final index = _resultCards.indexWhere(
+                (card) => card.id == cardToSave.id,
+              );
+              if (index != -1) {
+                _resultCards[index] = cardToSave.copyWith(
+                  hasChanges: false,
+                  shouldResetEditMode: true,
+                );
+              }
+            });
+          }
+          // 🔥 MODIFIED: Panggil _fetchTrackingResults dengan userId
+          if (_selectedGroup != null &&
+              _selectedChecker != null &&
+              _loggedInUserId != null) {
             _fetchTrackingResults(
               date: _selectedDate,
               group: _selectedGroup!,
               checker: _selectedChecker!,
               target: _totalTarget,
+              userId: _loggedInUserId!, // 🔥 NEW: Teruskan userId
             );
           }
         } else {
@@ -491,12 +550,9 @@ class _HasilpageState extends State<Hasilpage> {
     }
   }
 
-  Future<void> _deleteCardData(
-    int id,
-    String model,
-    String runnoAwal,
-    String runnoAkhir,
-  ) async {
+  // NEW: Callback for when the "Delete" button in HasilpageCardWidget is pressed
+  Future<void> _onDeleteCard(int? cardDetailId) async {
+    // Ubah tipe menjadi int?
     if (_isEntryConfirmed) {
       _showSnackBar('Data sudah dikonfirmasi, tidak bisa dihapus.');
       return;
@@ -505,50 +561,13 @@ class _HasilpageState extends State<Hasilpage> {
       _showSnackBar('Grup atau Checker tidak valid.');
       return;
     }
+    if (cardDetailId == null) {
+      // Cek null di sini
+      _showSnackBar('ID detail kartu tidak valid untuk dihapus.');
+      return;
+    }
 
-    bool confirm =
-        await showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Konfirmasi Hapus'),
-              content: const Text(
-                'Apakah Anda yakin ingin menghapus kartu ini?',
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Batal'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text(
-                    'Hapus',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!confirm) return;
-
-    final formattedDate = DateFormat(
-      'yyyy-MM-dd',
-    ).format(DateFormat('dd/MM/yy').parse(_selectedDate));
-
-    Map<String, dynamic> postData = {
-      'entry_date': formattedDate,
-      'group_code': _selectedGroup,
-      'checker_username': _selectedChecker,
-      'model': model,
-      'runno_awal': runnoAwal,
-      'runno_akhir': runnoAkhir,
-    };
-
-    // print('DEBUG Hasilpage: Data to delete: ${json.encode(postData)}');
+    Map<String, dynamic> postData = {'card_detail_id': cardDetailId};
 
     try {
       final response = await http.post(
@@ -557,22 +576,21 @@ class _HasilpageState extends State<Hasilpage> {
         body: json.encode(postData),
       );
 
-      // print(
-      //   'DEBUG Hasilpage: Delete Card Response Status Code: ${response.statusCode}',
-      // );
-      // print('DEBUG Hasilpage: Delete Card Response Body: ${response.body}');
-
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success']) {
           _showSnackBar('Kartu berhasil dihapus!');
-          // After successful delete, refresh the data
-          if (mounted && _selectedGroup != null && _selectedChecker != null) {
+          // 🔥 MODIFIED: Panggil _fetchTrackingResults dengan userId
+          if (mounted &&
+              _selectedGroup != null &&
+              _selectedChecker != null &&
+              _loggedInUserId != null) {
             _fetchTrackingResults(
               date: _selectedDate,
               group: _selectedGroup!,
               checker: _selectedChecker!,
               target: _totalTarget,
+              userId: _loggedInUserId!, // 🔥 NEW: Teruskan userId
             );
           }
         } else {
@@ -611,6 +629,7 @@ class _HasilpageState extends State<Hasilpage> {
       'entry_date': formattedDate,
       'group_code': _selectedGroup,
       'checker_username': _selectedChecker,
+      'user_id': _loggedInUserId, // 🔥 NEW: Tambahkan user_id ke postData
     };
     // print(
     //   'DEBUG Hasilpage: _confirmTrackingEntry POST data: ${json.encode(postData)}',
@@ -618,7 +637,7 @@ class _HasilpageState extends State<Hasilpage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/confirm_tracking_entry.php'),
+        Uri.parse('$_baseUrl/confirm_tracking_data.php'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(postData),
       );
@@ -632,13 +651,27 @@ class _HasilpageState extends State<Hasilpage> {
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success']) {
-          if (mounted) {
-            setState(() {
-              _isEntryConfirmed = true;
-            });
-          }
           _showSnackBar('Data berhasil dikonfirmasi!');
           // print('DEBUG Hasilpage: _confirmTrackingEntry success.');
+
+          final prefs = await SharedPreferences.getInstance();
+          // --- BARU: Simpan status konfirmasi sementara dan detail entri ---
+          await prefs.setBool(_prefsKeyLastConfirmedStatus, true);
+          await prefs.setString(_prefsKeyLastConfirmedDate, _selectedDate);
+          await prefs.setString(_prefsKeyLastConfirmedGroup, _selectedGroup!);
+          await prefs.setString(
+            _prefsKeyLastConfirmedChecker,
+            _selectedChecker!,
+          );
+
+          // --- Hapus data dari SharedPreferences utama ---
+          await prefs.remove(_prefsKeySelectedDate);
+          await prefs.remove(_prefsKeySelectedGroup);
+          await prefs.remove(_prefsKeySelectedUser);
+          await prefs.remove(_prefsKeyTotalTarget);
+
+          // --- Panggil _refreshData untuk memicu tampilan status "Sukses" dengan data kosong ---
+          await _refreshData();
         } else {
           _showSnackBar('Gagal konfirmasi data: ${responseData['message']}');
         }
@@ -664,7 +697,7 @@ class _HasilpageState extends State<Hasilpage> {
         "Total Actual: $_totalActual\n"
         "Total Difference: $_totalDifference\n"
         "Overall Efficiency: ${_overallEfficiency.toStringAsFixed(2)}%\n"
-        "Status Konfirmasi: ${_isEntryConfirmed ? 'Confirmed' : 'Pending'}";
+        "Status Konfirmasi: ${_isEntryConfirmed ? 'Sukses' : 'Pending'}"; // Di sini juga ganti
 
     final Uri whatsappUrl = Uri.parse(
       "whatsapp://send?text=${Uri.encodeComponent(message)}",
@@ -698,228 +731,193 @@ class _HasilpageState extends State<Hasilpage> {
       width: 1.0,
     );
 
-    Color confirmationColor = _isEntryConfirmed ? Colors.green : Colors.orange;
-    String confirmationText = _isEntryConfirmed ? 'Confirmed' : 'Pending';
+    Color confirmationColor =
+        _isEntryConfirmed
+            ? Colors.green
+            : const Color.fromARGB(255, 255, 84, 84);
+    String confirmationText = _isEntryConfirmed ? 'Sukses' : 'Pending';
 
     const double bottomNavBarTotalHeight = 90.0;
 
-    return GestureDetector(
-      onTap: () {
-        FocusScope.of(context).unfocus();
-      },
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                _buildTopDisplayFields(),
-                const SizedBox(height: 16),
-                _buildSummarySection(),
-              ],
-            ),
+    return
+    // HAPUS GestureDetector ini
+    // GestureDetector(
+    //   onTap: () {
+    //     FocusScope.of(context).unfocus();
+    //   },
+    //   child:
+    Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              _buildTopDisplayFields(),
+              const SizedBox(height: 16),
+              _buildSummarySection(),
+            ],
           ),
+        ),
 
-          Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFFDBE6F2),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(50)),
-                border: Border(
-                  top: BorderSide(color: Color(0xFF03112B), width: 9.0),
-                ),
-                boxShadow: _commonBoxShadow,
+        Expanded(
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFFDBE6F2),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(50)),
+              border: Border(
+                top: BorderSide(color: Color(0xFF03112B), width: 9.0),
               ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16.0, 30.0, 16.0, 16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Entry Status
-                        Expanded(
-                          child: Container(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
+              boxShadow: _commonBoxShadow,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16.0, 30.0, 16.0, 16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Entry Status (Kiri)
+                      Expanded(
+                        child: Container(
+                          height: _kActionElementHeight,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: _kButtonHorizontalPadding,
+                          ),
+                          decoration: BoxDecoration(
+                            color: confirmationColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            'Status: $confirmationText',
+                            style: TextStyle(
+                              color: confirmationColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: _kSpacing),
+                      // Refresh Button (Tengah)
+                      ElevatedButton(
+                        onPressed: _isLoading ? null : _refreshData,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.all(0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          minimumSize: const Size(
+                            _kActionElementHeight,
+                            _kActionElementHeight,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.refresh,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+
+                      const SizedBox(width: _kSpacing),
+                      // --- PERUBAHAN DI SINI: Logika tombol Konfirmasi/WhatsApp ---
+                      Expanded(
+                        child:
+                            !_isEntryConfirmed && _resultCards.isNotEmpty
+                                ? ElevatedButton(
+                                  onPressed:
+                                      _isLoading
+                                          ? null
+                                          : () => _confirmTrackingEntry(),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF0D2547),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: _kButtonHorizontalPadding,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    minimumSize: const Size(
+                                      0,
+                                      _kActionElementHeight,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Konfirmasi',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )
+                                : const SizedBox.shrink(),
+                      ),
+                      // --- AKHIR PERUBAHAN ---
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  _isLoading
+                      ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                      : _resultCards.isEmpty
+                      ? Center(
+                        // Menggunakan Center untuk pesan "Tidak ada data"
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text(
+                            _isEntryConfirmed && _selectedGroup != null
+                                ? 'Entri untuk $_selectedGroup pada $_selectedDate telah berhasil dikonfirmasi.'
+                                : 'Tidak ada data hasil untuk kriteria yang dipilih.',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                      : SizedBox(
+                        height: 200,
+                        child: PageView.builder(
+                          controller: _pageController,
+                          itemCount: _resultCards.length,
+                          itemBuilder: (context, index) {
+                            final card = _resultCards[index];
+                            return Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8, // Menyamakan tinggi
+                                horizontal: 8.0,
                               ),
-                              decoration: BoxDecoration(
-                                color: confirmationColor.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(
-                                  10,
-                                ), // Sedikit lebih besar
+                              child: HasilpageCardWidget(
+                                key: ValueKey(card.id),
+                                cardData: card,
+                                darkBlueCardBorderSide: darkBlueCardBorderSide,
+                                cardBackgroundColor: Colors.white,
+                                readOnly: _isEntryConfirmed,
+                                onCardDataChanged: _onCardDataChanged,
+                                onSaveUpdatedCard: _onSaveUpdatedCard,
+                                onDeleteCard: _onDeleteCard,
                               ),
-                              child: Text(
-                                'Entry Status: $confirmationText',
-                                style: TextStyle(
-                                  color: confirmationColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
-
-                        // Refresh Button
-                        Center(
-                          // Menggunakan Center untuk tombol ikon
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _refreshData,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(
-                                0xFF4CAF50,
-                              ), // Warna hijau
-                              padding: const EdgeInsets.all(
-                                8.0,
-                              ), // Padding disesuaikan untuk ikon
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              minimumSize: const Size(
-                                48,
-                                48,
-                              ), // Ukuran minimum agar konsisten
-                            ),
-                            child: const Icon(
-                              Icons.refresh,
-                              color: Colors.white,
-                              size: 24, // Ukuran ikon diperbesar
-                            ),
-                          ),
-                        ),
-
-                        // Konfirmasi Data / Kirim WhatsApp Button
-                        Expanded(
-                          child: Container(
-                            alignment: Alignment.centerRight,
-                            child:
-                                _isEntryConfirmed && _resultCards.isNotEmpty
-                                    ? ElevatedButton.icon(
-                                      onPressed: () => _sendToWhatsApp(),
-                                      icon: const Icon(
-                                        Icons.message,
-                                        color: Colors.white,
-                                        size: 18,
-                                      ),
-                                      label: const Text(
-                                        'Kirim WhatsApp',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFF25D366,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 15,
-                                          vertical: 8,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    : (!_isEntryConfirmed &&
-                                            _resultCards.isNotEmpty
-                                        ? ElevatedButton(
-                                          onPressed:
-                                              _isLoading
-                                                  ? null
-                                                  : () =>
-                                                      _confirmTrackingEntry(),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(
-                                              0xFF0D2547,
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 15,
-                                              vertical: 8,
-                                            ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                          ),
-                                          child: const Text(
-                                            // Teks diubah menjadi "Konfirmasi" saja
-                                            'Konfirmasi',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        )
-                                        : const SizedBox.shrink()),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    _isLoading
-                        ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24.0),
-                            child: CircularProgressIndicator(),
-                          ),
-                        )
-                        : _resultCards.isEmpty
-                        ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24.0),
-                            child: Text(
-                              'Tidak ada data hasil untuk kriteria yang dipilih.',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        )
-                        : Expanded(
-                          child: PageView.builder(
-                            controller: _pageController,
-                            itemCount: _resultCards.length,
-                            itemBuilder: (context, index) {
-                              final card = _resultCards[index];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8.0,
-                                ), // Padding antar kartu
-                                child: HasilpageCardWidget(
-                                  cardData: card,
-                                  darkBlueCardBorderSide:
-                                      darkBlueCardBorderSide,
-                                  cardBackgroundColor: Colors.white,
-                                  readOnly:
-                                      _isEntryConfirmed, // Tetap readOnly jika sudah dikonfirmasi
-                                  onDataChanged: _updateCardData,
-                                  onSave: _saveCardData,
-                                  onDelete: _deleteCardData,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                    SizedBox(height: bottomNavBarTotalHeight),
-                  ],
-                ),
+                      ),
+                  SizedBox(height: bottomNavBarTotalHeight),
+                ],
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1029,7 +1027,10 @@ class _HasilpageState extends State<Hasilpage> {
             Expanded(
               child: _buildSummaryFloatingLabelBox(
                 label: 'Difference',
-                value: _totalDifference.toString(),
+                value:
+                    _totalDifference > 0
+                        ? '+${_totalDifference.toString()}'
+                        : _totalDifference.toString(),
                 valueColor:
                     _totalDifference < 0
                         ? Colors.red
@@ -1058,13 +1059,13 @@ class _HasilpageState extends State<Hasilpage> {
     if (progress < 0) progress = 0;
     if (progress > 1) progress = 1;
 
-    Color barColor = Colors.grey;
-    if (_overallEfficiency >= 100) {
-      barColor = Colors.green;
-    } else if (_overallEfficiency > 0) {
+    Color barColor;
+    if (_overallEfficiency < 70) {
+      barColor = Colors.red;
+    } else if (_overallEfficiency >= 70 && _overallEfficiency < 85) {
       barColor = Colors.orange;
     } else {
-      barColor = Colors.red;
+      barColor = Colors.green;
     }
 
     return Column(
