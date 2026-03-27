@@ -45,6 +45,8 @@ dependencies:
   share_plus: ^9.0.0
   cupertino_icons: ^1.0.8
   flutter_local_notifications: ^17.0.0
+  android_intent_plus: ^4.0.0
+  audioplayers: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +79,11 @@ flutter:
     - assets/images/loginpage.svg
     - assets/images/wa.svg
     - assets/images/ss.svg
+    - assets/images/gmail.svg
+    - assets/images/cus.svg
+    - assets/images/admin.png
+    - assets/images/bg_hubkami.svg
+    - assets/images/klik.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -10,15 +10,19 @@ if (isset($_GET['group_code']) && isset($_GET['account_type'])) {
     $group_code = $_GET['group_code'];
     $account_type = $_GET['account_type']; // Parameter baru dari Flutter
 
-    // Query untuk mengambil checker berdasarkan group_code DAN associated_account_type
-    $stmt = $conn->prepare("SELECT checker_name FROM checkers WHERE group_code = ? AND associated_account_type = ? ORDER BY checker_name ASC");
+    // Query untuk mengambil checker_name DAN phone_number berdasarkan group_code DAN associated_account_type
+    $stmt = $conn->prepare("SELECT checker_name, phone_number FROM checkers WHERE group_code = ? AND associated_account_type = ? ORDER BY checker_name ASC");
     $stmt->bind_param("ss", $group_code, $account_type); // "ss" karena dua string
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($result->num_rows > 0) {
         while($row = $result->fetch_assoc()) {
-            $checkers[] = $row['checker_name']; // Hanya ambil nama checker
+            // 🔥 Mengembalikan objek dengan 'name' dan 'phone'
+            $checkers[] = [
+                "name" => $row['checker_name'],
+                "phone" => $row['phone_number']
+            ];
         }
         $response['success'] = true;
         $response['data'] = $checkers;

@@ -13,9 +13,10 @@ class HistoryEntry {
   final double efficiencyPercentage;
   final String? createdAt;
   final String productionType;
-  final String userAccountType; // ✅ Tambahkan ini
-  final String userName; // ✅ Tambahkan ini
-  final String userPhotoUrl; // ✅ Tambahkan ini
+  final String userAccountType;
+  final String userName;
+  final String userPhotoUrl;
+  final String? checkerPhoneNumber; // 🔥 PENTING: Tambahkan field ini!
 
   HistoryEntry({
     required this.id,
@@ -29,9 +30,10 @@ class HistoryEntry {
     required this.efficiencyPercentage,
     this.createdAt,
     required this.productionType,
-    required this.userAccountType, // ✅ Tambahkan ini
-    required this.userName, // ✅ Tambahkan ini
-    required this.userPhotoUrl, // ✅ Tambahkan ini
+    required this.userAccountType,
+    required this.userName,
+    required this.userPhotoUrl,
+    this.checkerPhoneNumber, // 🔥 PENTING: Tambahkan ke constructor!
   });
 
   factory HistoryEntry.fromJson(Map<String, dynamic> json) {
@@ -54,10 +56,12 @@ class HistoryEntry {
           double.tryParse(json['efficiency_percentage'].toString()) ?? 0.0,
       createdAt: json['created_at'] as String?,
       productionType: json['production_type'] as String? ?? 'N/A',
-      userAccountType:
-          json['user_account_type'] as String? ?? 'N/A', // ✅ Parse ini
-      userName: json['user_name'] as String? ?? 'N/A', // ✅ Parse ini
-      userPhotoUrl: json['user_photo_url'] as String? ?? '', // ✅ Parse ini
+      userAccountType: json['user_account_type'] as String? ?? 'N/A',
+      userName: json['user_name'] as String? ?? 'N/A',
+      userPhotoUrl: json['user_photo_url'] as String? ?? '',
+      checkerPhoneNumber:
+          json['checker_phone_number']
+              as String?, // 🔥 PENTING: Parse dari JSON!
     );
   }
 
@@ -73,9 +77,10 @@ class HistoryEntry {
     double? efficiencyPercentage,
     String? createdAt,
     String? productionType,
-    String? userAccountType, // ✅ Tambahkan ini
-    String? userName, // ✅ Tambahkan ini
-    String? userPhotoUrl, // ✅ Tambahkan ini
+    String? userAccountType,
+    String? userName,
+    String? userPhotoUrl,
+    String? checkerPhoneNumber, // 🔥 PENTING: Tambahkan ke copyWith!
   }) {
     return HistoryEntry(
       id: id ?? this.id,
@@ -89,10 +94,12 @@ class HistoryEntry {
       efficiencyPercentage: efficiencyPercentage ?? this.efficiencyPercentage,
       createdAt: createdAt ?? this.createdAt,
       productionType: productionType ?? this.productionType,
-      userAccountType:
-          userAccountType ?? this.userAccountType, // ✅ Tambahkan ini
-      userName: userName ?? this.userName, // ✅ Tambahkan ini
-      userPhotoUrl: userPhotoUrl ?? this.userPhotoUrl, // ✅ Tambahkan ini
+      userAccountType: userAccountType ?? this.userAccountType,
+      userName: userName ?? this.userName,
+      userPhotoUrl: userPhotoUrl ?? this.userPhotoUrl,
+      checkerPhoneNumber:
+          checkerPhoneNumber ??
+          this.checkerPhoneNumber, // 🔥 PENTING: Tambahkan ke copyWith!
     );
   }
 }

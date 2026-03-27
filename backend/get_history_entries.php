@@ -32,11 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     u.account_type AS user_account_type,
                     u.name AS user_name,
                     u.photo_url AS user_photo_url,
-                    te.production_type
+                    te.production_type,
+                    c.phone_number AS checker_phone_number  -- 🔥 Tambahkan phone_number dari tabel checkers
                 FROM
                     tracking_entries te
                 JOIN
                     users u ON te.user_id = u.id
+                LEFT JOIN
+                    checkers c ON te.checker_username = c.checker_name AND te.group_code = c.group_code -- 🔥 JOIN dengan checkers
                 WHERE te.user_id = ?";
 
         $params = [$user_id_int];
@@ -86,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $entry_row['user_photo_url'] = $entry_row['user_photo_url'] ?? '';
             $entry_row['production_type'] = $entry_row['production_type'] ?? 'N/A';
             $entry_row['user_account_type'] = $entry_row['user_account_type'] ?? 'N/A';
-
+            $entry_row['checker_phone_number'] = $entry_row['checker_phone_number'] ?? ''; // 🔥 Pastikan ada, default kosong jika null
 
             $history_entries[] = $entry_row;
         }

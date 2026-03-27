@@ -18,7 +18,8 @@
         android:label="runnotrack"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true"> <!-- PENTING: Untuk Android 10 (API 29) ke atas agar bisa menulis ke penyimpanan eksternal -->
+        android:requestLegacyExternalStorage="true"
+                android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

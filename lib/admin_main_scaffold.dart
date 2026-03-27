@@ -7,7 +7,7 @@ import 'admin_bottom_navigation_bar.dart';
 
 // Import halaman-halaman admin
 import 'riwayatpage_admin.dart';
-import 'profilpage_admin.dart';
+import 'profilpage_admin.dart'; // Pastikan ini mengarah ke file yang benar
 
 class AdminMainScaffold extends StatefulWidget {
   const AdminMainScaffold({super.key});
@@ -21,9 +21,10 @@ class _AdminMainScaffoldState extends State<AdminMainScaffold> {
   String? _loggedInUsername;
   String? _loggedInAccountType;
   String? _profileImageFilename;
-  String? _loggedInUserId;
+  String?
+  _loggedInUserIdString; // Variabel untuk string ID dari SharedPreferences
+  int _loggedInUserId = 0; // Variabel int untuk ID user Admin
   String? _loggedInName;
-  String? _loggedInRole;
 
   bool _isLoadingUserData = true;
 
@@ -41,20 +42,28 @@ class _AdminMainScaffoldState extends State<AdminMainScaffold> {
       _loggedInUsername = prefs.getString('username');
       _loggedInAccountType = prefs.getString('accountType');
       _profileImageFilename = prefs.getString('photo_url');
-      _loggedInUserId = prefs.getString('user_id');
+      _loggedInUserIdString = prefs.getString(
+        'user_id',
+      ); // Ambil sebagai string
       _loggedInName = prefs.getString('name');
-      _loggedInRole = prefs.getString('role');
+
+      // Parse _loggedInUserIdString ke int untuk digunakan oleh fitur ganti password admin
+      if (_loggedInUserIdString != null) {
+        _loggedInUserId = int.tryParse(_loggedInUserIdString!) ?? 0;
+      } else {
+        _loggedInUserId = 0; // Default jika tidak ada ID atau gagal parse
+        print('Warning: loggedInUserId is null or could not be parsed.');
+      }
 
       // Inisialisasi halaman admin setelah data user dimuat
-      // RiwayatpageAdmin tidak memerlukan parameter adminUserId, adminName, adminPhotoUrl
-      // karena ia mengambil semua data yang dibutuhkan secara internal
       _adminPages = [
-        const RiwayatpageAdmin(), // DIPERBAIKI: Dipanggil tanpa parameter
+        const RiwayatpageAdmin(),
         ProfilPageAdmin(
-          userName: _loggedInName ?? 'Admin',
-          userRole: _loggedInRole ?? 'admin',
-          userAccountType: _loggedInAccountType ?? 'Admin',
-          userPhotoUrl: _profileImageFilename ?? '',
+          loggedInUsername: _loggedInName ?? _loggedInUsername ?? 'Admin',
+          loggedInUserAccountType: _loggedInAccountType ?? 'Admin',
+          loggedInUserPhotoUrl: _profileImageFilename, // Bisa null
+          loggedInUserId:
+              _loggedInUserId, // ID user Admin diteruskan untuk fitur ganti password
         ),
       ];
       _isLoadingUserData = false;
@@ -90,7 +99,6 @@ class _AdminMainScaffoldState extends State<AdminMainScaffold> {
             right: 15,
             bottom: 20,
             child: AdminPillBottomNavigationBar(
-              // Gunakan AdminPillBottomNavigationBar
               selectedIndex: _selectedIndex,
               onItemTapped: _onItemTapped,
             ),

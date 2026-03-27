@@ -66,8 +66,8 @@ $sql = "SELECT
             te.is_confirmed,
             te.production_type,
             u.account_type,
-            u.name AS user_name_from_db,  -- ✅ Ganti nama alias untuk menghindari konflik
-            u.photo_url AS user_photo_filename_from_db, -- ✅ Ganti nama alias
+            u.name AS user_name_from_db,
+            u.photo_url AS user_photo_filename_from_db,
             td.id AS tracking_detail_id,
             td.model,
             td.runno_awal,
@@ -177,8 +177,8 @@ while ($row = $result->fetch_assoc()) {
             'is_confirmed' => (bool)$row['is_confirmed'],
             'production_type' => $row['production_type'],
             'user_account_type' => $row['account_type'],
-            'user_name' => $user_name_display, // ✅ Gunakan nama dengan fallback
-            'user_photo_url' => $full_user_photo_url, // ✅ Kirim URL LENGKAP
+            'user_name' => $user_name_display,
+            'user_photo_url' => $full_user_photo_url,
             'details' => []
         ];
     }

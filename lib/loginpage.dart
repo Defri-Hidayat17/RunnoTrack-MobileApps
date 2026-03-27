@@ -386,7 +386,12 @@ class _LoginPageState extends State<LoginPage> {
                 child: Center(
                   child: LoadingAnimationWidget.twistingDots(
                     // Contoh animasi modern
-                    leftDotColor: const Color(0xFF062B59), // Warna dot kiri
+                    leftDotColor: const Color.fromARGB(
+                      255,
+                      9,
+                      111,
+                      236,
+                    ), // Warna dot kiri
                     rightDotColor: const Color.fromARGB(
                       255,
                       255,

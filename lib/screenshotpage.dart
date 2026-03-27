@@ -286,20 +286,39 @@ class _ScreenshotPageState extends State<ScreenshotPage> {
     }
   }
 
-  // ❌ HAPUS TOTAL: _takeScreenshotAuto() tidak lagi digunakan
-  // Future<void> _takeScreenshotAuto() async {
-  //   final image = await _screenshotController.capture();
-  //   if (image == null) return;
-  //   _lastScreenshotBytes = image;
-  //   _hasScreenshot = true;
-  //   await Gal.putImageBytes(image);
-  // }
+  // ✅ NEW: Fungsi untuk membuka WhatsApp dengan nomor dan pesan spesifik
+  Future<void> _openWhatsAppWithNumberAndMessage(
+    String phoneNumber,
+    String message,
+  ) async {
+    // Format nomor telepon untuk WhatsApp (menghilangkan karakter non-digit dan menambahkan kode negara jika perlu)
+    String formattedPhoneNumber = phoneNumber.replaceAll(RegExp(r'\D'), '');
+    // Contoh: jika nomor tidak diawali '62' dan panjangnya lebih dari 5 digit, tambahkan '62'
+    if (!formattedPhoneNumber.startsWith('62') &&
+        formattedPhoneNumber.length > 5) {
+      formattedPhoneNumber = '62$formattedPhoneNumber';
+    }
 
-  Future<void> _openWhatsAppOnly() async {
-    final Uri url = Uri.parse("whatsapp://send");
+    // 🔥 PERUBAHAN DI SINI: Jika 'message' kosong, jangan sertakan parameter 'text'
+    Uri url;
+    if (message.isEmpty) {
+      url = Uri.parse("whatsapp://send?phone=$formattedPhoneNumber");
+    } else {
+      url = Uri.parse(
+        "whatsapp://send?phone=$formattedPhoneNumber&text=${Uri.encodeComponent(message)}",
+      );
+    }
 
     try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Aplikasi WhatsApp tidak ditemukan.')),
+          );
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -307,6 +326,11 @@ class _ScreenshotPageState extends State<ScreenshotPage> {
         ).showSnackBar(SnackBar(content: Text('Gagal membuka WhatsApp: $e')));
       }
     }
+  }
+
+  // 🔥 PERUBAHAN DI SINI: Fungsi ini sekarang hanya mengembalikan string kosong
+  String _buildWhatsAppMessage() {
+    return ''; // Mengembalikan string kosong agar tidak ada teks otomatis
   }
 
   Future<void> _showNotif() async {
@@ -350,8 +374,29 @@ class _ScreenshotPageState extends State<ScreenshotPage> {
         return;
       }
 
-      // 📱 buka WA
-      await _openWhatsAppOnly();
+      final String? checkerPhoneNumber = widget.entry.checkerPhoneNumber;
+
+      if (checkerPhoneNumber == null || checkerPhoneNumber.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Nomor WhatsApp checker tidak ditemukan untuk entri ini.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 📝 Bangun pesan WhatsApp (sekarang akan kosong)
+      final String whatsappMessage = _buildWhatsAppMessage();
+
+      // 📱 Buka WhatsApp dengan nomor dan pesan yang sudah ditentukan
+      await _openWhatsAppWithNumberAndMessage(
+        checkerPhoneNumber,
+        whatsappMessage,
+      );
 
       // 🔔 notif real (tidak blocking UI)
       // Menggunakan Future.microtask agar notifikasi dijadwalkan secepatnya
@@ -377,7 +422,8 @@ class _ScreenshotPageState extends State<ScreenshotPage> {
       body: Screenshot(
         controller: _screenshotController,
         child: Container(
-          color: _pageBackgroundColor,
+          color:
+              _pageBackgroundColor, // 🔥 PASTIKAN BACKGROUND TERLIHAT SAAT SCREENSHOT
           child: Stack(
             children: [
               Column(

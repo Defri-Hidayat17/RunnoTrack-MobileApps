@@ -69,6 +69,7 @@ class _HomePageState extends State<HomePage> {
       _loggedInUserId = prefs.getString('user_id');
 
       final String currentUserName = _loggedInUsername ?? 'Pengguna';
+      final String currentUserAccountType = _loggedInAccountType ?? 'User';
       final String currentUserPhotoUrl =
           (_profileImageFilename != null && _profileImageFilename!.isNotEmpty)
               ? _profileImageFilename!
@@ -89,7 +90,11 @@ class _HomePageState extends State<HomePage> {
             : const Center(
               child: Text('Error: User ID tidak ditemukan. Mohon login ulang.'),
             ),
-        const ProfilPage(),
+        // 🔥 PERBAIKAN DI SINI: Meneruskan data profil pengguna yang login ke ProfilPage
+        ProfilPage(
+          loggedInUserAccountType: currentUserAccountType,
+          loggedInUserPhotoUrl: currentUserPhotoUrl,
+        ),
       ];
       _isLoadingUserData = false;
     });
@@ -123,7 +128,7 @@ class _HomePageState extends State<HomePage> {
           Positioned(
             left: 15,
             right: 15,
-            bottom: 20,
+            bottom: 20, // Menggunakan nilai 40 sesuai kode Anda
             child: PillBottomNavigationBar(
               selectedIndex: _selectedIndex,
               onItemTapped: _onItemTapped,
@@ -331,7 +336,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
   List<CardData> _cards = [];
 
   List<String> _availableGroups = [];
-  List<String> _availableCheckers = [];
+  // 🔥 PENTING: Ubah tipe data ini dari List<String> menjadi List<Map<String, String>>
+  List<Map<String, String>> _availableCheckers = [];
 
   String? _loggedInAccountType;
   int _nextCardId = 1;
@@ -462,7 +468,9 @@ class _HomeContentPageState extends State<_HomeContentPage>
     if (_selectedGroup != null && _loggedInAccountType != null) {
       await _fetchCheckersByGroup(_selectedGroup!, _loggedInAccountType!);
       final String? savedUser = prefs.getString(_prefsKeySelectedUser);
-      if (savedUser != null && _availableCheckers.contains(savedUser)) {
+      // 🔥 PENTING: Perbarui cara mengecek keberadaan user di _availableCheckers
+      if (savedUser != null &&
+          _availableCheckers.any((checker) => checker['name'] == savedUser)) {
         _selectedUser = savedUser;
       } else {
         _selectedUser = null;
@@ -549,7 +557,12 @@ class _HomeContentPageState extends State<_HomeContentPage>
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success']) {
           setState(() {
-            _availableCheckers = List<String>.from(responseData['data']);
+            // 🔥 PENTING: Memproses List<Map<String, String>> dari API
+            _availableCheckers = List<Map<String, String>>.from(
+              responseData['data'].map(
+                (item) => Map<String, String>.from(item),
+              ),
+            );
           });
           if (_availableCheckers.isEmpty) {
             _showSnackBar(
@@ -778,11 +791,15 @@ class _HomeContentPageState extends State<_HomeContentPage>
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
                       children:
-                          _availableCheckers.map((String value) {
+                          // 🔥 PENTING: Iterasi melalui List<Map<String, String>>
+                          _availableCheckers.map((
+                            Map<String, String> checkerMap,
+                          ) {
                             return InkWell(
                               onTap: () async {
                                 setState(() {
-                                  _selectedUser = value;
+                                  _selectedUser =
+                                      checkerMap['name']; // Gunakan 'name' untuk _selectedUser
                                   _toggleCheckerDropdown();
                                 });
                                 await _saveCurrentState();
@@ -794,14 +811,16 @@ class _HomeContentPageState extends State<_HomeContentPage>
                                   vertical: 12,
                                 ),
                                 child: Text(
-                                  value,
+                                  checkerMap['name']!, // Tampilkan 'name'
                                   style: TextStyle(
                                     color:
-                                        _selectedUser == value
+                                        _selectedUser ==
+                                                checkerMap['name'] // Bandingkan dengan 'name'
                                             ? Theme.of(context).primaryColor
                                             : Colors.black,
                                     fontWeight:
-                                        _selectedUser == value
+                                        _selectedUser ==
+                                                checkerMap['name'] // Bandingkan dengan 'name'
                                             ? FontWeight.bold
                                             : FontWeight.normal,
                                   ),
@@ -844,8 +863,15 @@ class _HomeContentPageState extends State<_HomeContentPage>
 
     final formattedDate = DateFormat('dd/MM/yy').parse(_selectedDate);
 
+    // 🔥 NEW: Dapatkan production_type dari _loggedInAccountType
+    String productionType = _loggedInAccountType ?? 'Unknown';
+    if (productionType == 'Unknown') {
+      _showSnackBar('Error: Tipe akun tidak dikenali. Mohon login ulang.');
+      return;
+    }
+
     final url =
-        '$_baseUrl/get_tracking_results.php?entry_date=${DateFormat('yyyy-MM-dd').format(formattedDate)}&group_code=$_selectedGroup&checker_username=$_selectedUser&user_id=${widget.loggedInUserId}';
+        '$_baseUrl/get_tracking_results.php?entry_date=${DateFormat('yyyy-MM-dd').format(formattedDate)}&group_code=$_selectedGroup&checker_username=$_selectedUser&user_id=${widget.loggedInUserId}&production_type=$productionType'; // 🔥 Tambahkan production_type
 
     try {
       final response = await http.get(Uri.parse(url));
@@ -860,6 +886,8 @@ class _HomeContentPageState extends State<_HomeContentPage>
             _totalTargetController.text =
                 responseData['data'][0]['total_target'].toString();
             _initialTotalTargetValue = _totalTargetController.text;
+            // 🔥 Jika perlu menyimpan phone_number di sini, tambahkan variabel baru
+            // String? _checkerPhoneNumber = responseData['data'][0]['phone_number'];
           } else {
             _isTopFieldsLocked = false;
             _trackingEntryId = null;
@@ -907,6 +935,15 @@ class _HomeContentPageState extends State<_HomeContentPage>
       return;
     }
 
+    // 🔥 NEW: Dapatkan production_type dari _loggedInAccountType
+    String productionType = _loggedInAccountType ?? 'Unknown';
+    if (productionType == 'Unknown') {
+      _showSnackBar('Error: Tipe akun tidak dikenali. Mohon login ulang.');
+      return;
+    }
+
+    print('Production Type dikirim: $productionType'); // 🔍 DEBUG
+
     Map<String, dynamic> postData = {
       'entry_date': DateFormat(
         'yyyy-MM-dd',
@@ -915,6 +952,7 @@ class _HomeContentPageState extends State<_HomeContentPage>
       'checker_username': _selectedUser,
       'total_target': parsedTotalTarget,
       'user_id': widget.loggedInUserId,
+      'production_type': productionType, // 🔥 WAJIB ADA
     };
 
     if (_trackingEntryId != null) {

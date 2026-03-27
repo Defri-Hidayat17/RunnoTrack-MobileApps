@@ -577,7 +577,7 @@ class _LoginPageUserState extends State<LoginPageUser> {
                   color: Colors.black.withOpacity(0.6),
                   child: Center(
                     child: LoadingAnimationWidget.twistingDots(
-                      leftDotColor: const Color(0xFF062B59),
+                      leftDotColor: const Color.fromARGB(255, 9, 111, 236),
                       rightDotColor: const Color.fromARGB(255, 255, 255, 255),
                       size: 80,
                     ),

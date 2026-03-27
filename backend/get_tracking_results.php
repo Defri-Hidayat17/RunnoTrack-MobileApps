@@ -26,8 +26,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $user_id = $user_id_param;
 
     try {
-        // 🔥 Tambahkan user_id ke klausa WHERE
-        $stmt_entry = $conn->prepare("SELECT id, group_code, checker_username, total_target, is_confirmed FROM tracking_entries WHERE entry_date = ? AND group_code = ? AND checker_username = ? AND user_id = ?");
+        // 🔥 JOIN dengan tabel 'checkers' untuk mendapatkan phone_number
+        $stmt_entry = $conn->prepare("
+            SELECT
+                te.id,
+                te.group_code,
+                te.checker_username,
+                te.total_target,
+                te.is_confirmed,
+                c.phone_number
+            FROM tracking_entries te
+            LEFT JOIN checkers c
+                ON te.checker_username = c.checker_name
+                AND te.group_code = c.group_code
+            WHERE
+                te.entry_date = ?
+                AND te.group_code = ?
+                AND te.checker_username = ?
+                AND te.user_id = ?
+        ");
         if (!$stmt_entry) {
             throw new Exception("Prepare statement failed: " . $conn->error);
         }
@@ -62,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     'tracking_entry_id' => $tracking_entry_id,
                     'total_target' => $entry_data['total_target'],
                     'is_confirmed' => $entry_data['is_confirmed'],
+                    'phone_number' => $entry_data['phone_number'] ?? '', // 🔥 Tambahkan phone_number
                     'cards' => $card_details
                 ]
             ];
